@@ -51,6 +51,7 @@ coverage.xml
 tmp/
 *.log
 cache/
+recordings/
 
 # macOS
 .DS_Store

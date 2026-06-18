@@ -278,6 +278,24 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
         except Exception as exc:
             logger.debug("Daemon wobbler audio tap failed: %s", exc)
 
+    def _record_sent_input_audio(self, audio_frame: NDArray[np.int16]) -> None:
+        """Record audio sent to the realtime server."""
+
+    def _start_recorded_user_audio_turn(self) -> None:
+        """Start a provider-specific input recording turn."""
+
+    def _finish_recorded_user_audio_turn(self, transcript: str | None = None) -> None:
+        """Finish a provider-specific input recording turn."""
+
+    def _record_received_assistant_audio(self, audio_frame: NDArray[np.int16]) -> None:
+        """Record assistant audio received from the realtime server."""
+
+    def _finish_recorded_assistant_audio_turn(self) -> None:
+        """Finish a provider-specific assistant recording turn."""
+
+    def _close_audio_recording(self) -> None:
+        """Flush provider-specific audio recordings at shutdown/session end."""
+
     def copy(self) -> "BaseRealtimeHandler":
         """Create a copy of the handler."""
         return type(self)(
@@ -772,6 +790,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
                     if event.type == "input_audio_buffer.speech_started":
                         self.is_idle_tool_call = False
                         self._mark_activity("user_speech_started")
+                        self._start_recorded_user_audio_turn()
                         self._turn_user_done_at = None
                         self._turn_response_created_at = None
                         self._turn_first_audio_at = None
@@ -786,6 +805,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
                         logger.debug("User speech stopped - server will auto-commit with VAD")
 
                     if event.type == "response.output_audio.done":
+                        self._finish_recorded_assistant_audio_turn()
                         logger.debug("response completed")
 
                     if event.type == "response.output_text.delta":
@@ -849,6 +869,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
                         self.deps.movement_manager.set_listening(False)
 
                         await self._cancel_partial_transcript_task()
+                        self._finish_recorded_user_audio_turn(raw_transcript)
 
                         if not transcript:
                             logger.debug("Ignoring empty user transcript")
@@ -872,6 +893,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
                     if event.type == "response.output_audio.delta":
                         decoded_pcm_bytes = base64.b64decode(event.delta)
                         decoded_pcm = np.frombuffer(decoded_pcm_bytes, dtype=np.int16).reshape(1, -1)
+                        self._record_received_assistant_audio(decoded_pcm)
                         if self.gradio_mode:
                             self._tap_audio_for_daemon_wobbler(decoded_pcm)
                         self._mark_activity("assistant_audio_delta")
@@ -971,6 +993,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
 
                 # Stop background tool manager tasks (listener + cleanup) in all paths.
                 await self.tool_manager.shutdown()
+                self._close_audio_recording()
 
     # Microphone receive
     async def receive(self, frame: Tuple[int, NDArray[np.int16]]) -> None:
@@ -1009,6 +1032,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
         try:
             audio_message = base64.b64encode(audio_frame.tobytes()).decode("utf-8")
             await self.connection.input_audio_buffer.append(audio=audio_message)
+            self._record_sent_input_audio(audio_frame)
         except Exception as e:
             logger.debug("Dropping audio frame: connection not ready (%s)", e)
             return
@@ -1040,6 +1064,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
         await self.tool_manager.shutdown()
 
         await self._cancel_partial_transcript_task()
+        self._close_audio_recording()
 
         if self.connection:
             try:
