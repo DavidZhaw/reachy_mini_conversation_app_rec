@@ -65,7 +65,7 @@ async def test_openai_handler_records_only_audio_sent_successfully(tmp_path: Pat
             self.input_audio_buffer = FakeInputAudioBuffer()
 
     deps = ToolDependencies(reachy_mini=None, movement_manager=None)
-    handler = OpenaiRealtimeHandler(deps)
+    handler = OpenaiRealtimeHandler(deps, record_audio=True)
     handler.connection = FakeConnection()  # type: ignore[assignment]
 
     await handler.receive((24_000, np.array([100, 200, 300], dtype=np.int16)))
@@ -80,3 +80,21 @@ async def test_openai_handler_records_only_audio_sent_successfully(tmp_path: Pat
 
     with wave.open(str(handler._audio_recorder.run_dir / "turn_0001_user_input.wav"), "rb") as wav_file:
         assert wav_file.getnframes() == 3
+
+
+@pytest.mark.asyncio
+async def test_openai_audio_recording_is_disabled_by_default(tmp_path: Path, monkeypatch: Any) -> None:
+    """OpenAI handler should not create recording folders unless explicitly enabled."""
+    monkeypatch.setenv("OPENAI_AUDIO_RECORDINGS_DIR", str(tmp_path))
+
+    deps = ToolDependencies(reachy_mini=None, movement_manager=None)
+    handler = OpenaiRealtimeHandler(deps)
+
+    handler._record_sent_input_audio(np.array([100, 200, 300], dtype=np.int16))
+    handler._start_recorded_user_audio_turn()
+    handler._finish_recorded_user_audio_turn("ignored")
+    handler._record_received_assistant_audio(np.array([1, 2], dtype=np.int16))
+    handler._finish_recorded_assistant_audio_turn()
+
+    assert handler._audio_recorder is None
+    assert list(tmp_path.iterdir()) == []

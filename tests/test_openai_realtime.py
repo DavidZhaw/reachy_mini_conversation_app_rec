@@ -513,12 +513,14 @@ def test_copy_preserves_current_voice_override(monkeypatch: Any) -> None:
     handler = OpenaiRealtimeHandler(
         ToolDependencies(reachy_mini=MagicMock(), movement_manager=MagicMock()),
         startup_voice="shimmer",
+        record_audio=True,
     )
     handler._voice_override = "marin"
 
     copied_handler = handler.copy()
 
     assert copied_handler.get_current_voice() == "marin"
+    assert copied_handler._record_audio is True
 
 
 def test_format_timestamp_uses_wall_clock() -> None:

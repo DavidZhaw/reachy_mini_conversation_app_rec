@@ -46,13 +46,25 @@ class OpenaiRealtimeHandler(BaseRealtimeHandler):
         gradio_mode: bool = False,
         instance_path: str | None = None,
         startup_voice: str | None = None,
+        record_audio: bool = False,
     ) -> None:
         """Initialize OpenAI-specific credential state."""
         super().__init__(deps, gradio_mode, instance_path, startup_voice)
         self._key_source: Literal["env", "textbox"] = "env"
         self._provided_api_key: str | None = None
+        self._record_audio = record_audio
         self._audio_recorder: ConversationAudioRecorder | None = None
         self._audio_recorder_failed = False
+
+    def copy(self) -> "OpenaiRealtimeHandler":
+        """Create a copy of the handler while preserving OpenAI-specific options."""
+        return type(self)(
+            self.deps,
+            self.gradio_mode,
+            self.instance_path,
+            startup_voice=self._voice_override,
+            record_audio=self._record_audio,
+        )
 
     def _audio_recordings_root(self) -> Path:
         configured_root = (os.getenv("OPENAI_AUDIO_RECORDINGS_DIR") or "").strip()
@@ -61,6 +73,8 @@ class OpenaiRealtimeHandler(BaseRealtimeHandler):
         return PROJECT_ROOT / "recordings" / "openai"
 
     def _get_audio_recorder(self) -> ConversationAudioRecorder | None:
+        if not self._record_audio:
+            return None
         if self._audio_recorder is not None:
             return self._audio_recorder
         if self._audio_recorder_failed:

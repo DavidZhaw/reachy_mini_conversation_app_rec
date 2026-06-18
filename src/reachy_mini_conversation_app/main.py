@@ -223,6 +223,7 @@ def run(
             gradio_mode=args.gradio,
             instance_path=instance_path,
             startup_voice=startup_voice,
+            record_audio=args.record_openai_audio,
         )
 
     handler = build_handler(startup_settings.voice)

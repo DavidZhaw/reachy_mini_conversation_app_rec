@@ -39,6 +39,12 @@ def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
         help="Use local vision model instead of the selected realtime backend vision",
     )
     parser.add_argument("--gradio", default=False, action="store_true", help="Open gradio interface")
+    parser.add_argument(
+        "--record-openai-audio",
+        default=False,
+        action="store_true",
+        help="Save OpenAI Realtime input/output audio turns as WAV files with a JSON manifest",
+    )
     parser.add_argument("--debug", default=False, action="store_true", help="Enable debug logging")
     parser.add_argument(
         "--robot-name",
