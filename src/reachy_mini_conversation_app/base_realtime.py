@@ -33,6 +33,7 @@ from reachy_mini_conversation_app.config import (
     get_available_voices_for_backend,
 )
 from reachy_mini_conversation_app.idle_policy import start_idle_tool_call
+from reachy_mini_conversation_app.audio_output import Pcm16PeakNormalizer
 from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
 from reachy_mini_conversation_app.conversation_handler import ConversationHandler
 from reachy_mini_conversation_app.tools.background_tool_manager import (
@@ -165,6 +166,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
         self._turn_user_done_at: float | None = None
         self._turn_response_created_at: float | None = None
         self._turn_first_audio_at: float | None = None
+        self.audio_output_normalizer = Pcm16PeakNormalizer()
 
     @staticmethod
     def _sanitize_tool_result_for_model(tool_name: str, tool_result: dict[str, Any]) -> dict[str, Any]:
@@ -893,9 +895,10 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
                     if event.type == "response.output_audio.delta":
                         decoded_pcm_bytes = base64.b64decode(event.delta)
                         decoded_pcm = np.frombuffer(decoded_pcm_bytes, dtype=np.int16).reshape(1, -1)
-                        self._record_received_assistant_audio(decoded_pcm)
+                        normalized_pcm = self.audio_output_normalizer.process(decoded_pcm)
+                        self._record_received_assistant_audio(normalized_pcm)
                         if self.gradio_mode:
-                            self._tap_audio_for_daemon_wobbler(decoded_pcm)
+                            self._tap_audio_for_daemon_wobbler(normalized_pcm)
                         self._mark_activity("assistant_audio_delta")
                         if self._turn_user_done_at is not None and self._turn_first_audio_at is None:
                             self._turn_first_audio_at = time.perf_counter()
@@ -904,7 +907,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
                         await self.output_queue.put(
                             (
                                 self.output_sample_rate,
-                                decoded_pcm,
+                                normalized_pcm,
                             ),
                         )
                     # ---- tool-calling plumbing ----

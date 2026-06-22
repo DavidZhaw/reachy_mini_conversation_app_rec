@@ -34,6 +34,7 @@ from reachy_mini_conversation_app.config import (
 )
 from reachy_mini_conversation_app.prompts import get_session_voice, get_session_instructions
 from reachy_mini_conversation_app.idle_policy import start_idle_tool_call
+from reachy_mini_conversation_app.audio_output import Pcm16PeakNormalizer
 from reachy_mini_conversation_app.tools.core_tools import (
     ToolDependencies,
     get_active_tool_specs,
@@ -184,6 +185,7 @@ class GeminiLiveHandler(ConversationHandler):
         self._pending_user_transcript_chunks: list[str] = []
         self._pending_assistant_transcript_chunks: list[str] = []
         self._listening_state = False
+        self.audio_output_normalizer = Pcm16PeakNormalizer()
 
     def copy(self) -> "GeminiLiveHandler":
         """Create a copy of the handler."""
@@ -605,6 +607,7 @@ class GeminiLiveHandler(ConversationHandler):
                                                 continue
 
                                             self.last_activity_time = time.monotonic()
+                                            audio_array = self.audio_output_normalizer.process(audio_array)
 
                                             await self.output_queue.put(
                                                 (GEMINI_OUTPUT_SAMPLE_RATE, audio_array),
