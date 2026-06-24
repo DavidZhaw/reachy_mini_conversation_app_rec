@@ -1,6 +1,8 @@
 import numpy as np
 
 from reachy_mini_conversation_app.audio_output import Pcm16PeakNormalizer, normalize_pcm16_peak
+from reachy_mini_conversation_app.openai_realtime import OpenaiRealtimeHandler
+from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
 
 
 def test_normalize_pcm16_peak_amplifies_quiet_audio() -> None:
@@ -62,3 +64,26 @@ def test_pcm16_peak_normalizer_lowers_gain_for_louder_snippets() -> None:
     normalized = normalizer.process(louder)
 
     assert int(np.max(np.abs(normalized.astype(np.int32)))) <= int(np.iinfo(np.int16).max * 0.98)
+
+
+def test_realtime_output_audio_normalization_is_disabled_by_default() -> None:
+    """Realtime handlers should leave assistant audio unchanged unless the CLI flag enables normalization."""
+    deps = ToolDependencies(reachy_mini=object(), movement_manager=object())
+    handler = OpenaiRealtimeHandler(deps)
+    audio = np.array([[-1000, 0, 1000]], dtype=np.int16)
+
+    processed = handler._process_output_audio(audio)
+
+    assert processed is audio
+
+
+def test_realtime_output_audio_normalization_can_be_enabled() -> None:
+    """Realtime handlers should normalize assistant audio when requested."""
+    deps = ToolDependencies(reachy_mini=object(), movement_manager=object())
+    handler = OpenaiRealtimeHandler(deps, enable_audio_output_normalization=True)
+    audio = np.array([[-1000, 0, 1000]], dtype=np.int16)
+
+    processed = handler._process_output_audio(audio)
+
+    assert processed is not audio
+    assert int(np.max(np.abs(processed.astype(np.int32)))) > 1000

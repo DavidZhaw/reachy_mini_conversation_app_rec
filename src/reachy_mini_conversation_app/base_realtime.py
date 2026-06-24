@@ -115,6 +115,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
         gradio_mode: bool = False,
         instance_path: Optional[str] = None,
         startup_voice: Optional[str] = None,
+        enable_audio_output_normalization: bool = False,
     ):
         """Initialize the handler."""
         sample_rate = self.SAMPLE_RATE
@@ -166,7 +167,8 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
         self._turn_user_done_at: float | None = None
         self._turn_response_created_at: float | None = None
         self._turn_first_audio_at: float | None = None
-        self.audio_output_normalizer = Pcm16PeakNormalizer()
+        self.enable_audio_output_normalization = enable_audio_output_normalization
+        self.audio_output_normalizer = Pcm16PeakNormalizer() if enable_audio_output_normalization else None
 
     @staticmethod
     def _sanitize_tool_result_for_model(tool_name: str, tool_result: dict[str, Any]) -> dict[str, Any]:
@@ -298,6 +300,12 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
     def _close_audio_recording(self) -> None:
         """Flush provider-specific audio recordings at shutdown/session end."""
 
+    def _process_output_audio(self, audio_frame: NDArray[np.int16]) -> NDArray[np.int16]:
+        """Optionally normalize assistant audio before playback."""
+        if self.audio_output_normalizer is None:
+            return audio_frame
+        return self.audio_output_normalizer.process(audio_frame)
+
     def copy(self) -> "BaseRealtimeHandler":
         """Create a copy of the handler."""
         return type(self)(
@@ -305,6 +313,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
             self.gradio_mode,
             self.instance_path,
             startup_voice=self._voice_override,
+            enable_audio_output_normalization=self.enable_audio_output_normalization,
         )
 
     async def change_voice(self, voice: str) -> str:
@@ -895,7 +904,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
                     if event.type == "response.output_audio.delta":
                         decoded_pcm_bytes = base64.b64decode(event.delta)
                         decoded_pcm = np.frombuffer(decoded_pcm_bytes, dtype=np.int16).reshape(1, -1)
-                        normalized_pcm = self.audio_output_normalizer.process(decoded_pcm)
+                        normalized_pcm = self._process_output_audio(decoded_pcm)
                         self._record_received_assistant_audio(normalized_pcm)
                         if self.gradio_mode:
                             self._tap_audio_for_daemon_wobbler(normalized_pcm)

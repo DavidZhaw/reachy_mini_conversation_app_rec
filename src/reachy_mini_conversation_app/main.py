@@ -190,6 +190,7 @@ def run(
                 gradio_mode=args.gradio,
                 instance_path=instance_path,
                 startup_voice=startup_voice,
+                enable_audio_output_normalization=args.normalize_output_audio,
             )
         if config.BACKEND_PROVIDER == HF_BACKEND:
             from reachy_mini_conversation_app.huggingface_realtime import HuggingFaceRealtimeHandler
@@ -210,6 +211,7 @@ def run(
                 gradio_mode=args.gradio,
                 instance_path=instance_path,
                 startup_voice=startup_voice,
+                enable_audio_output_normalization=args.normalize_output_audio,
             )
 
         from reachy_mini_conversation_app.openai_realtime import OpenaiRealtimeHandler
@@ -224,6 +226,7 @@ def run(
             instance_path=instance_path,
             startup_voice=startup_voice,
             record_audio=args.record_openai_audio,
+            enable_audio_output_normalization=args.normalize_output_audio,
         )
 
     handler = build_handler(startup_settings.voice)
