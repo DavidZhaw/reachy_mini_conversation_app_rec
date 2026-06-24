@@ -14,6 +14,7 @@ def test_parse_args_openai_audio_recording_defaults_to_disabled(monkeypatch: pyt
     args, _unknown = parse_args()
 
     assert args.record_openai_audio is False
+    assert args.normalize_output_audio is False
 
 
 def test_parse_args_accepts_openai_audio_recording_flag(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -23,3 +24,12 @@ def test_parse_args_accepts_openai_audio_recording_flag(monkeypatch: pytest.Monk
     args, _unknown = parse_args()
 
     assert args.record_openai_audio is True
+
+
+def test_parse_args_accepts_output_audio_normalization_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLI should expose opt-in output audio normalization."""
+    monkeypatch.setattr(sys, "argv", ["reachy-mini-conversation-app", "--normalize-output-audio"])
+
+    args, _unknown = parse_args()
+
+    assert args.normalize_output_audio is True

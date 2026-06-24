@@ -204,6 +204,7 @@ The app runs in console mode by default. Add `--gradio` to launch a web UI at ht
 | `--local-vision` | `False` | Use the local vision model (SmolVLM2) for camera-tool requests instead of the selected realtime backend. Requires `local_vision` extra to be installed. |
 | `--gradio` | `False` | Launch the Gradio web UI. Without this flag, runs in console mode. Required when running in simulation mode. |
 | `--record-openai-audio` | `False` | OpenAI backend only. Save audio sent to and received from OpenAI as per-turn WAV files plus `manifest.json` in `recordings/openai/<run timestamp>/`. |
+| `--normalize-output-audio` | `False` | Increase assistant playback volume with smoothed peak normalization. Useful when voices/backends have noticeably different output levels. |
 | `--robot-name` | `None` | Optional. Connect to a specific robot by name when running multiple daemons on the same subnet. See [Multiple robots on the same subnet](#advanced-features). |
 | `--debug` | `False` | Enable verbose logging for troubleshooting. |
 
@@ -227,9 +228,14 @@ reachy-mini-conversation-app --gradio
 
 # Record OpenAI Realtime audio turns for the current run
 reachy-mini-conversation-app --record-openai-audio
+
+# Boost assistant playback volume with smoothed output normalization
+reachy-mini-conversation-app --normalize-output-audio
 ```
 
 OpenAI audio recording is disabled by default. When enabled, each conversation run creates a new folder under `recordings/openai/`; set `OPENAI_AUDIO_RECORDINGS_DIR` to override that root directory.
+
+Output audio normalization is disabled by default. When enabled, assistant audio snippets are peak-normalized with smoothing and a quiet-pause gate to reduce backend/voice volume differences without boosting silence.
 
 > [!WARNING]
 > `--local-vision` is not supported when running the conversation app directly on Reachy Mini Wireless / the Raspberry Pi. For local vision, keep the daemon running on the robot and start the conversation app from your laptop or workstation instead.

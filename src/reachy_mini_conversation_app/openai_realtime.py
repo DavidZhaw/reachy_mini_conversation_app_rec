@@ -47,9 +47,16 @@ class OpenaiRealtimeHandler(BaseRealtimeHandler):
         instance_path: str | None = None,
         startup_voice: str | None = None,
         record_audio: bool = False,
+        enable_audio_output_normalization: bool = False,
     ) -> None:
         """Initialize OpenAI-specific credential state."""
-        super().__init__(deps, gradio_mode, instance_path, startup_voice)
+        super().__init__(
+            deps,
+            gradio_mode,
+            instance_path,
+            startup_voice,
+            enable_audio_output_normalization=enable_audio_output_normalization,
+        )
         self._key_source: Literal["env", "textbox"] = "env"
         self._provided_api_key: str | None = None
         self._record_audio = record_audio
@@ -64,6 +71,7 @@ class OpenaiRealtimeHandler(BaseRealtimeHandler):
             self.instance_path,
             startup_voice=self._voice_override,
             record_audio=self._record_audio,
+            enable_audio_output_normalization=self.enable_audio_output_normalization,
         )
 
     def _audio_recordings_root(self) -> Path:

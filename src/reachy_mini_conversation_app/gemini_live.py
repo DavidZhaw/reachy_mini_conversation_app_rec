@@ -34,6 +34,7 @@ from reachy_mini_conversation_app.config import (
 )
 from reachy_mini_conversation_app.prompts import get_session_voice, get_session_instructions
 from reachy_mini_conversation_app.idle_policy import start_idle_tool_call
+from reachy_mini_conversation_app.audio_output import Pcm16PeakNormalizer
 from reachy_mini_conversation_app.tools.core_tools import (
     ToolDependencies,
     get_active_tool_specs,
@@ -149,6 +150,7 @@ class GeminiLiveHandler(ConversationHandler):
         gradio_mode: bool = False,
         instance_path: Optional[str] = None,
         startup_voice: Optional[str] = None,
+        enable_audio_output_normalization: bool = False,
     ):
         """Initialize the handler."""
         super().__init__(
@@ -184,6 +186,8 @@ class GeminiLiveHandler(ConversationHandler):
         self._pending_user_transcript_chunks: list[str] = []
         self._pending_assistant_transcript_chunks: list[str] = []
         self._listening_state = False
+        self.enable_audio_output_normalization = enable_audio_output_normalization
+        self.audio_output_normalizer = Pcm16PeakNormalizer() if enable_audio_output_normalization else None
 
     def copy(self) -> "GeminiLiveHandler":
         """Create a copy of the handler."""
@@ -192,6 +196,7 @@ class GeminiLiveHandler(ConversationHandler):
             self.gradio_mode,
             self.instance_path,
             startup_voice=self._voice_override,
+            enable_audio_output_normalization=self.enable_audio_output_normalization,
         )
 
     def _set_listening_state(self, listening: bool) -> None:
@@ -605,6 +610,8 @@ class GeminiLiveHandler(ConversationHandler):
                                                 continue
 
                                             self.last_activity_time = time.monotonic()
+                                            if self.audio_output_normalizer is not None:
+                                                audio_array = self.audio_output_normalizer.process(audio_array)
 
                                             await self.output_queue.put(
                                                 (GEMINI_OUTPUT_SAMPLE_RATE, audio_array),

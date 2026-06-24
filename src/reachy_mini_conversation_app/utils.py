@@ -45,6 +45,12 @@ def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
         action="store_true",
         help="Save OpenAI Realtime input/output audio turns as WAV files with a JSON manifest",
     )
+    parser.add_argument(
+        "--normalize-output-audio",
+        default=False,
+        action="store_true",
+        help="Increase assistant audio playback volume with smoothed peak normalization",
+    )
     parser.add_argument("--debug", default=False, action="store_true", help="Enable debug logging")
     parser.add_argument(
         "--robot-name",
