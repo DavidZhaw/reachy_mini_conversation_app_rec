@@ -233,7 +233,7 @@ reachy-mini-conversation-app --record-openai-audio
 reachy-mini-conversation-app --normalize-output-audio
 ```
 
-OpenAI audio recording is disabled by default. When enabled, each conversation run creates a new folder under `recordings/openai/`; set `OPENAI_AUDIO_RECORDINGS_DIR` to override that root directory.
+OpenAI audio recording is disabled by default. When enabled, each conversation run creates a new folder under `recordings/openai/`. It writes per-turn WAV files and `manifest.json` under `recordings/openai/<run timestamp>/` for all audio snippets sent to and received from OpenAI. Set `OPENAI_AUDIO_RECORDINGS_DIR` to override that root directory.
 
 Output audio normalization is disabled by default. When enabled, assistant audio snippets are peak-normalized with smoothing and a quiet-pause gate to reduce backend/voice volume differences without boosting silence.
 
