@@ -12,7 +12,6 @@ import gradio as gr
 
 from reachy_mini_conversation_app.config import (
     LOCKED_PROFILE,
-    DEFAULT_PROFILES_DIRECTORY,
     config,
     get_default_voice_for_backend,
     get_available_voices_for_backend,
@@ -27,7 +26,7 @@ class PersonalityUI:
         """Initialize the PersonalityUI instance."""
         # Constants and paths
         self.DEFAULT_OPTION = "(built-in default)"
-        self._profiles_root = DEFAULT_PROFILES_DIRECTORY
+        self._profiles_root = config.PROFILES_DIRECTORY
         self._tools_dir = Path(__file__).parent / "tools"
         self._prompts_dir = Path(__file__).parent / "prompts"
 
