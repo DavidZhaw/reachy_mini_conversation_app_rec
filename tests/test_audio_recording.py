@@ -1,5 +1,6 @@
 import json
 import wave
+import asyncio
 from typing import Any
 from pathlib import Path
 
@@ -48,6 +49,27 @@ def test_audio_recorder_writes_per_turn_wavs_and_manifest(tmp_path: Path) -> Non
         assert wav_file.getnchannels() == 1
         assert wav_file.getsampwidth() == 2
         assert wav_file.getnframes() == 6
+
+
+def test_audio_recorder_reports_saved_user_turn_for_diarization(tmp_path: Path) -> None:
+    """Recorder should expose saved user WAV paths for asynchronous diarization."""
+    saved: list[tuple[Path, dict[str, Any]]] = []
+    recorder = ConversationAudioRecorder(
+        tmp_path,
+        sample_rate=24_000,
+        on_user_turn_saved=lambda wav_path, entry: saved.append((wav_path, entry)),
+    )
+
+    recorder.start_user_turn()
+    recorder.buffer_sent_input_audio(np.array([1, 2], dtype=np.int16))
+    recorder.finish_user_turn(transcript="hello")
+
+    assert len(saved) == 1
+    wav_path, entry = saved[0]
+    assert wav_path.name == "turn_0001_user_input.wav"
+    assert entry["diarization_file_name"] == "turn_0001_user_input.diarization.json"
+    manifest = _read_manifest(recorder.run_dir)
+    assert manifest["entries"][0]["diarization_file_name"] == "turn_0001_user_input.diarization.json"
 
 
 @pytest.mark.asyncio
@@ -125,3 +147,45 @@ def test_gemini_audio_recording_preserves_input_and_output_sample_rates(
     assert manifest["entries"][1]["direction"] == "assistant_output"
     assert manifest["entries"][1]["sample_rate"] == 24_000
     assert manifest["entries"][1]["duration_seconds"] == pytest.approx(4 / 24_000)
+
+
+@pytest.mark.asyncio
+async def test_realtime_audio_diarization_runs_after_user_wav_is_saved(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    """Diarization should run asynchronously after a user WAV has been written."""
+    monkeypatch.setenv("AUDIO_RECORDINGS_DIR", str(tmp_path))
+    monkeypatch.setattr("reachy_mini_conversation_app.config.config.OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr("reachy_mini_conversation_app.config.config.DIARIZATION_MODEL_NAME", "test-diarize-model")
+
+    calls: list[tuple[Path, Path, str, str]] = []
+
+    async def fake_diarize_audio_file(
+        *,
+        wav_path: Path,
+        output_path: Path,
+        model_name: str,
+        api_key: str,
+    ) -> None:
+        calls.append((wav_path, output_path, model_name, api_key))
+        output_path.write_text('{"ok": true}\n', encoding="utf-8")
+
+    monkeypatch.setattr("reachy_mini_conversation_app.openai_diarize.diarize_audio_file", fake_diarize_audio_file)
+
+    deps = ToolDependencies(reachy_mini=None, movement_manager=None)
+    handler = OpenaiRealtimeHandler(deps, record_audio=True, record_diarize_audio=True)
+
+    handler._start_recorded_user_audio_turn()
+    handler._record_sent_input_audio(np.array([1, 2, 3], dtype=np.int16))
+    handler._finish_recorded_user_audio_turn("hello")
+    await asyncio.sleep(0)
+    await handler._wait_for_audio_diarization()
+
+    assert len(calls) == 1
+    wav_path, output_path, model_name, api_key = calls[0]
+    assert wav_path.name == "turn_0001_user_input.wav"
+    assert output_path.name == "turn_0001_user_input.diarization.json"
+    assert model_name == "test-diarize-model"
+    assert api_key == "test-key"
+    assert output_path.exists()

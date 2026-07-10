@@ -1,7 +1,7 @@
 import json
 import wave
 import logging
-from typing import Any
+from typing import Any, Callable
 from pathlib import Path
 from datetime import datetime, timezone
 from collections import deque
@@ -63,6 +63,7 @@ class ConversationAudioRecorder:
         channels: int = 1,
         sample_width_bytes: int = 2,
         input_preroll_seconds: float = 1.0,
+        on_user_turn_saved: Callable[[Path, dict[str, Any]], None] | None = None,
     ) -> None:
         """Create a per-run recording directory and manifest."""
         self.root_dir = root_dir
@@ -70,6 +71,7 @@ class ConversationAudioRecorder:
         self.channels = channels
         self.sample_width_bytes = sample_width_bytes
         self.input_preroll_samples = int(sample_rate * input_preroll_seconds)
+        self.on_user_turn_saved = on_user_turn_saved
 
         self.started_at = _utc_now()
         self.run_dir = self.root_dir / _format_run_dir_name(self.started_at)
@@ -196,8 +198,12 @@ class ConversationAudioRecorder:
             "sample_format": "pcm_s16le",
             **turn.metadata,
         }
+        if turn.direction == "user_input" and self.on_user_turn_saved is not None:
+            entry["diarization_file_name"] = path.with_suffix(".diarization.json").name
         self.entries.append(entry)
         self._write_manifest()
+        if turn.direction == "user_input" and self.on_user_turn_saved is not None:
+            self.on_user_turn_saved(path, entry)
         logger.info("Saved realtime audio recording: %s", path)
 
     def _write_manifest(self) -> None:

@@ -121,6 +121,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
         startup_voice: Optional[str] = None,
         enable_audio_output_normalization: bool = False,
         record_audio: bool = False,
+        record_diarize_audio: bool = False,
     ):
         """Initialize the handler."""
         sample_rate = self.SAMPLE_RATE
@@ -175,8 +176,13 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
         self.enable_audio_output_normalization = enable_audio_output_normalization
         self.audio_output_normalizer = Pcm16PeakNormalizer() if enable_audio_output_normalization else None
         self._record_audio = record_audio
+        self._record_diarize_audio = record_audio and record_diarize_audio
+        if record_diarize_audio and not record_audio:
+            logger.warning("--diarize-audio requires --record-audio; diarization is disabled.")
         self._audio_recorder: ConversationAudioRecorder | None = None
         self._audio_recorder_failed = False
+        self._diarization_tasks: set[asyncio.Task[None]] = set()
+        self._diarization_config_warning_logged = False
 
     @staticmethod
     def _sanitize_tool_result_for_model(tool_name: str, tool_result: dict[str, Any]) -> dict[str, Any]:
@@ -323,6 +329,55 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
         if self._audio_recorder is not None:
             self._audio_recorder.close()
 
+    async def _wait_for_audio_diarization(self) -> None:
+        """Wait for pending audio diarization jobs to finish."""
+        if not self._diarization_tasks:
+            return
+        await asyncio.gather(*list(self._diarization_tasks), return_exceptions=True)
+
+    def _handle_user_recording_saved(self, wav_path: Path, entry: dict[str, Any]) -> None:
+        """Schedule diarization for a saved user recording."""
+        if not self._record_diarize_audio:
+            return
+
+        openai_api_key = (config.OPENAI_API_KEY or "").strip()
+        if not openai_api_key:
+            if not self._diarization_config_warning_logged:
+                logger.warning("Audio diarization requires OPENAI_API_KEY; skipping diarization.")
+                self._diarization_config_warning_logged = True
+            return
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.warning("Audio diarization skipped because no asyncio loop is running.")
+            return
+
+        output_name = str(entry.get("diarization_file_name") or wav_path.with_suffix(".diarization.json").name)
+        output_path = wav_path.with_name(output_name)
+        task = loop.create_task(
+            self._run_audio_diarization(wav_path=wav_path, output_path=output_path, api_key=openai_api_key),
+            name=f"audio-diarization-{wav_path.stem}",
+        )
+        self._diarization_tasks.add(task)
+        task.add_done_callback(self._diarization_tasks.discard)
+
+    async def _run_audio_diarization(self, *, wav_path: Path, output_path: Path, api_key: str) -> None:
+        """Run one OpenAI diarization job."""
+        try:
+            from reachy_mini_conversation_app.openai_diarize import diarize_audio_file
+
+            await diarize_audio_file(
+                wav_path=wav_path,
+                output_path=output_path,
+                model_name=config.DIARIZATION_MODEL_NAME,
+                api_key=api_key,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Audio diarization failed for %s: %s", wav_path, exc)
+
     def _audio_recordings_root(self) -> Path:
         """Return the root directory for realtime audio recordings."""
         configured_root = (os.getenv("AUDIO_RECORDINGS_DIR") or "").strip()
@@ -343,6 +398,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
             self._audio_recorder = ConversationAudioRecorder(
                 self._audio_recordings_root(),
                 sample_rate=self.SAMPLE_RATE,
+                on_user_turn_saved=self._handle_user_recording_saved if self._record_diarize_audio else None,
             )
             logger.info("%s audio recording directory: %s", self.BACKEND_PROVIDER, self._audio_recorder.run_dir)
         except Exception as exc:
@@ -366,6 +422,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
             startup_voice=self._voice_override,
             enable_audio_output_normalization=self.enable_audio_output_normalization,
             record_audio=self._record_audio,
+            record_diarize_audio=self._record_diarize_audio,
         )
 
     async def change_voice(self, voice: str) -> str:
@@ -1058,6 +1115,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
                 # Stop background tool manager tasks (listener + cleanup) in all paths.
                 await self.tool_manager.shutdown()
                 self._close_audio_recording()
+                await self._wait_for_audio_diarization()
 
     # Microphone receive
     async def receive(self, frame: Tuple[int, NDArray[np.int16]]) -> None:
@@ -1129,6 +1187,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
 
         await self._cancel_partial_transcript_task()
         self._close_audio_recording()
+        await self._wait_for_audio_diarization()
 
         if self.connection:
             try:

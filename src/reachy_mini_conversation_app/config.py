@@ -92,6 +92,7 @@ DEFAULT_BACKEND_PROVIDER = HF_BACKEND
 HF_REALTIME_CONNECTION_MODE_ENV = "HF_REALTIME_CONNECTION_MODE"
 HF_REALTIME_WS_URL_ENV = "HF_REALTIME_WS_URL"
 REALTIME_TRANSCRIPTION_LANGUAGE_ENV = "REALTIME_TRANSCRIPTION_LANGUAGE"
+DEFAULT_DIARIZATION_MODEL_NAME = "gpt-4o-transcribe-diarize"
 HF_LOCAL_CONNECTION_MODE = "local"
 HF_DEPLOYED_CONNECTION_MODE = "deployed"
 HF_REALTIME_SESSION_PROXY_URL = "https://pollen-robotics-reachy-mini-realtime-url.hf.space/session"
@@ -364,6 +365,7 @@ class Config:
         os.getenv("MODEL_NAME"),
     )
     MODEL_NAME = _resolve_model_name(BACKEND_PROVIDER, os.getenv("MODEL_NAME"))
+    DIARIZATION_MODEL_NAME = os.getenv("DIARIZATION_MODEL_NAME", DEFAULT_DIARIZATION_MODEL_NAME)
     HF_REALTIME_CONNECTION_MODE = (
         _normalize_hf_connection_mode(os.getenv(HF_REALTIME_CONNECTION_MODE_ENV)) or HF_DEFAULTS.connection_mode
     )
@@ -468,6 +470,7 @@ def refresh_runtime_config_from_env() -> None:
         os.getenv("MODEL_NAME"),
     )
     config.MODEL_NAME = _resolve_model_name(config.BACKEND_PROVIDER, os.getenv("MODEL_NAME"))
+    config.DIARIZATION_MODEL_NAME = os.getenv("DIARIZATION_MODEL_NAME", DEFAULT_DIARIZATION_MODEL_NAME)
     config.HF_REALTIME_CONNECTION_MODE = (
         _normalize_hf_connection_mode(os.getenv(HF_REALTIME_CONNECTION_MODE_ENV)) or HF_DEFAULTS.connection_mode
     )

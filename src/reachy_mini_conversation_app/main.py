@@ -192,6 +192,7 @@ def run(
                 startup_voice=startup_voice,
                 enable_audio_output_normalization=args.normalize_output_audio,
                 record_audio=args.record_audio,
+                record_diarize_audio=args.diarize_audio,
             )
         if config.BACKEND_PROVIDER == HF_BACKEND:
             from reachy_mini_conversation_app.huggingface_realtime import HuggingFaceRealtimeHandler
@@ -214,6 +215,7 @@ def run(
                 startup_voice=startup_voice,
                 enable_audio_output_normalization=args.normalize_output_audio,
                 record_audio=args.record_audio,
+                record_diarize_audio=args.diarize_audio,
             )
 
         from reachy_mini_conversation_app.openai_realtime import OpenaiRealtimeHandler
@@ -228,6 +230,7 @@ def run(
             instance_path=instance_path,
             startup_voice=startup_voice,
             record_audio=args.record_audio,
+            record_diarize_audio=args.diarize_audio,
             enable_audio_output_normalization=args.normalize_output_audio,
         )
 

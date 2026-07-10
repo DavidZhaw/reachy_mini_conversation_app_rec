@@ -14,6 +14,7 @@ def test_parse_args_audio_recording_defaults_to_disabled(monkeypatch: pytest.Mon
     args, _unknown = parse_args()
 
     assert args.record_audio is False
+    assert args.diarize_audio is False
     assert args.normalize_output_audio is False
 
 
@@ -24,6 +25,15 @@ def test_parse_args_accepts_audio_recording_flag(monkeypatch: pytest.MonkeyPatch
     args, _unknown = parse_args()
 
     assert args.record_audio is True
+
+
+def test_parse_args_accepts_audio_diarization_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLI should expose an opt-in flag for recorded user-audio diarization."""
+    monkeypatch.setattr(sys, "argv", ["reachy-mini-conversation-app", "--diarize-audio"])
+
+    args, _unknown = parse_args()
+
+    assert args.diarize_audio is True
 
 
 def test_parse_args_accepts_output_audio_normalization_flag(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -132,6 +132,7 @@ Copy `.env.example` to `.env` when you want to switch backends, provide API keys
 | `GEMINI_API_KEY` | Required for Gemini mode. Also accepts `GOOGLE_API_KEY`. Get one at [aistudio.google.com](https://aistudio.google.com/apikey). |
 | `BACKEND_PROVIDER` | Realtime backend to use: `huggingface` (default), `openai`, or `gemini`. |
 | `MODEL_NAME` | Optional model override for OpenAI Realtime or Gemini Live. Defaults to `gpt-realtime-2` for OpenAI and `gemini-3.1-flash-live-preview` for Gemini. Hugging Face uses the server's model selection. |
+| `DIARIZATION_MODEL_NAME` | Optional OpenAI model for `--diarize-audio`. Defaults to `gpt-4o-transcribe-diarize`. |
 | `REALTIME_TRANSCRIPTION_LANGUAGE` | Optional input transcription language for realtime backends. Defaults to `en`; set to a backend-supported code such as `zh` for Chinese. |
 | `HF_REALTIME_CONNECTION_MODE` | Hugging Face connection selector: `deployed` uses the built-in Hugging Face server; `local` uses `HF_REALTIME_WS_URL`. Defaults to `deployed`. |
 | `HF_REALTIME_WS_URL` | Direct websocket endpoint for your own Hugging Face backend. Accepts either a base URL like `ws://127.0.0.1:8765/v1` or the full websocket URL `ws://127.0.0.1:8765/v1/realtime`. Used when `HF_REALTIME_CONNECTION_MODE=local`. |
@@ -204,6 +205,7 @@ The app runs in console mode by default. Add `--gradio` to launch a web UI at ht
 | `--local-vision` | `False` | Use the local vision model (SmolVLM2) for camera-tool requests instead of the selected realtime backend. Requires `local_vision` extra to be installed. |
 | `--gradio` | `False` | Launch the Gradio web UI. Without this flag, runs in console mode. Required when running in simulation mode. |
 | `--record-audio` | `False` | Save realtime audio sent to and received from the selected backend as per-turn WAV files plus `manifest.json` in `recordings/<backend>/<run timestamp>/`. |
+| `--diarize-audio` | `False` | Diarize saved user-input WAV files with OpenAI after each user turn is recorded. Requires `--record-audio`, `OPENAI_API_KEY`, and `DIARIZATION_MODEL_NAME`. |
 | `--normalize-output-audio` | `False` | Increase assistant playback volume with smoothed peak normalization. Useful when voices/backends have noticeably different output levels. |
 | `--robot-name` | `None` | Optional. Connect to a specific robot by name when running multiple daemons on the same subnet. See [Multiple robots on the same subnet](#advanced-features). |
 | `--debug` | `False` | Enable verbose logging for troubleshooting. |
@@ -229,11 +231,16 @@ reachy-mini-conversation-app --gradio
 # Record realtime audio turns for the current run
 reachy-mini-conversation-app --record-audio
 
+# Record realtime audio turns and diarize user-input WAV files
+reachy-mini-conversation-app --record-audio --diarize-audio
+
 # Boost assistant playback volume with smoothed output normalization
 reachy-mini-conversation-app --normalize-output-audio
 ```
 
 Audio recording is disabled by default. When enabled, each conversation run creates a new folder under `recordings/<backend>/`. It writes per-turn WAV files and `manifest.json` under `recordings/<backend>/<run timestamp>/` for audio sent to and received from the selected realtime backend. Set `AUDIO_RECORDINGS_DIR` to override that root directory.
+
+Audio diarization is disabled by default and only runs when `--record-audio` is also enabled. It sends each saved user-input WAV to OpenAI's audio transcriptions endpoint using `DIARIZATION_MODEL_NAME` and writes a matching `*.diarization.json` file in the same recording folder. Assistant audio returned by the realtime model is not diarized.
 
 Output audio normalization is disabled by default. When enabled, assistant audio snippets are peak-normalized with smoothing and a quiet-pause gate to reduce backend/voice volume differences without boosting silence.
 

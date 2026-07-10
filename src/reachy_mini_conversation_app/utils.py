@@ -46,6 +46,13 @@ def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
         help="Save realtime input/output audio turns as WAV files with a JSON manifest",
     )
     parser.add_argument(
+        "--diarize-audio",
+        dest="diarize_audio",
+        default=False,
+        action="store_true",
+        help="Diarize recorded user audio with OpenAI after saving each user WAV; requires --record-audio",
+    )
+    parser.add_argument(
         "--normalize-output-audio",
         default=False,
         action="store_true",

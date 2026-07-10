@@ -43,6 +43,7 @@ class OpenaiRealtimeHandler(BaseRealtimeHandler):
         instance_path: str | None = None,
         startup_voice: str | None = None,
         record_audio: bool = False,
+        record_diarize_audio: bool = False,
         enable_audio_output_normalization: bool = False,
     ) -> None:
         """Initialize OpenAI-specific credential state."""
@@ -53,6 +54,7 @@ class OpenaiRealtimeHandler(BaseRealtimeHandler):
             startup_voice,
             enable_audio_output_normalization=enable_audio_output_normalization,
             record_audio=record_audio,
+            record_diarize_audio=record_diarize_audio,
         )
         self._key_source: Literal["env", "textbox"] = "env"
         self._provided_api_key: str | None = None
