@@ -203,7 +203,7 @@ The app runs in console mode by default. Add `--gradio` to launch a web UI at ht
 | `--no-camera` | `False` | Run without camera capture or head tracking. |
 | `--local-vision` | `False` | Use the local vision model (SmolVLM2) for camera-tool requests instead of the selected realtime backend. Requires `local_vision` extra to be installed. |
 | `--gradio` | `False` | Launch the Gradio web UI. Without this flag, runs in console mode. Required when running in simulation mode. |
-| `--record-openai-audio` | `False` | OpenAI backend only. Save audio sent to and received from OpenAI as per-turn WAV files plus `manifest.json` in `recordings/openai/<run timestamp>/`. |
+| `--record-audio` | `False` | Save realtime audio sent to and received from the selected backend as per-turn WAV files plus `manifest.json` in `recordings/<backend>/<run timestamp>/`. |
 | `--normalize-output-audio` | `False` | Increase assistant playback volume with smoothed peak normalization. Useful when voices/backends have noticeably different output levels. |
 | `--robot-name` | `None` | Optional. Connect to a specific robot by name when running multiple daemons on the same subnet. See [Multiple robots on the same subnet](#advanced-features). |
 | `--debug` | `False` | Enable verbose logging for troubleshooting. |
@@ -226,14 +226,14 @@ reachy-mini-conversation-app --no-camera
 # Launch with Gradio web interface
 reachy-mini-conversation-app --gradio
 
-# Record OpenAI Realtime audio turns for the current run
-reachy-mini-conversation-app --record-openai-audio
+# Record realtime audio turns for the current run
+reachy-mini-conversation-app --record-audio
 
 # Boost assistant playback volume with smoothed output normalization
 reachy-mini-conversation-app --normalize-output-audio
 ```
 
-OpenAI audio recording is disabled by default. When enabled, each conversation run creates a new folder under `recordings/openai/`. It writes per-turn WAV files and `manifest.json` under `recordings/openai/<run timestamp>/` for all audio snippets sent to and received from OpenAI. Set `OPENAI_AUDIO_RECORDINGS_DIR` to override that root directory.
+Audio recording is disabled by default. When enabled, each conversation run creates a new folder under `recordings/<backend>/`. It writes per-turn WAV files and `manifest.json` under `recordings/<backend>/<run timestamp>/` for audio sent to and received from the selected realtime backend. Set `AUDIO_RECORDINGS_DIR` to override that root directory.
 
 Output audio normalization is disabled by default. When enabled, assistant audio snippets are peak-normalized with smoothing and a quiet-pause gate to reduce backend/voice volume differences without boosting silence.
 

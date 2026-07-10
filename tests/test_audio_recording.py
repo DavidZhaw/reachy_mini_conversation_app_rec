@@ -6,9 +6,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from reachy_mini_conversation_app.gemini_live import GeminiLiveHandler
 from reachy_mini_conversation_app.audio_recording import ConversationAudioRecorder
 from reachy_mini_conversation_app.openai_realtime import OpenaiRealtimeHandler
 from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
+from reachy_mini_conversation_app.huggingface_realtime import HuggingFaceRealtimeHandler
 
 
 def _read_manifest(run_dir: Path) -> dict[str, Any]:
@@ -49,9 +51,9 @@ def test_audio_recorder_writes_per_turn_wavs_and_manifest(tmp_path: Path) -> Non
 
 
 @pytest.mark.asyncio
-async def test_openai_handler_records_only_audio_sent_successfully(tmp_path: Path, monkeypatch: Any) -> None:
-    """OpenAI handler should record input only after the append call succeeds."""
-    monkeypatch.setenv("OPENAI_AUDIO_RECORDINGS_DIR", str(tmp_path))
+async def test_realtime_handler_records_only_audio_sent_successfully(tmp_path: Path, monkeypatch: Any) -> None:
+    """Realtime handlers should record input only after the append call succeeds."""
+    monkeypatch.setenv("AUDIO_RECORDINGS_DIR", str(tmp_path))
 
     class FakeInputAudioBuffer:
         def __init__(self) -> None:
@@ -83,12 +85,12 @@ async def test_openai_handler_records_only_audio_sent_successfully(tmp_path: Pat
 
 
 @pytest.mark.asyncio
-async def test_openai_audio_recording_is_disabled_by_default(tmp_path: Path, monkeypatch: Any) -> None:
-    """OpenAI handler should not create recording folders unless explicitly enabled."""
-    monkeypatch.setenv("OPENAI_AUDIO_RECORDINGS_DIR", str(tmp_path))
+async def test_realtime_audio_recording_is_disabled_by_default(tmp_path: Path, monkeypatch: Any) -> None:
+    """Realtime handlers should not create recording folders unless explicitly enabled."""
+    monkeypatch.setenv("AUDIO_RECORDINGS_DIR", str(tmp_path))
 
     deps = ToolDependencies(reachy_mini=None, movement_manager=None)
-    handler = OpenaiRealtimeHandler(deps)
+    handler = HuggingFaceRealtimeHandler(deps)
 
     handler._record_sent_input_audio(np.array([100, 200, 300], dtype=np.int16))
     handler._start_recorded_user_audio_turn()
@@ -98,3 +100,28 @@ async def test_openai_audio_recording_is_disabled_by_default(tmp_path: Path, mon
 
     assert handler._audio_recorder is None
     assert list(tmp_path.iterdir()) == []
+
+
+def test_gemini_audio_recording_preserves_input_and_output_sample_rates(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    """Gemini recordings should preserve its distinct input and output sample rates."""
+    monkeypatch.setenv("AUDIO_RECORDINGS_DIR", str(tmp_path))
+
+    deps = ToolDependencies(reachy_mini=None, movement_manager=None)
+    handler = GeminiLiveHandler(deps, record_audio=True)
+
+    handler._record_sent_input_audio(np.array([1, 2, 3], dtype=np.int16))
+    handler._finish_recorded_user_audio_turn()
+    handler._record_received_assistant_audio(np.array([4, 5, 6, 7], dtype=np.int16))
+    handler._finish_recorded_assistant_audio_turn()
+
+    assert handler._audio_recorder is not None
+    manifest = _read_manifest(handler._audio_recorder.run_dir)
+    assert manifest["entries"][0]["direction"] == "user_input"
+    assert manifest["entries"][0]["sample_rate"] == 16_000
+    assert manifest["entries"][0]["duration_seconds"] == pytest.approx(3 / 16_000)
+    assert manifest["entries"][1]["direction"] == "assistant_output"
+    assert manifest["entries"][1]["sample_rate"] == 24_000
+    assert manifest["entries"][1]["duration_seconds"] == pytest.approx(4 / 24_000)

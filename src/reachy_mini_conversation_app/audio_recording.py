@@ -39,6 +39,7 @@ class _AudioTurn:
     turn_index: int
     file_name: str
     started_at: datetime
+    sample_rate: int
     chunks: list[_AudioChunk] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -52,7 +53,7 @@ class _AudioTurn:
 
 
 class ConversationAudioRecorder:
-    """Persist OpenAI realtime conversation audio as per-turn WAV files."""
+    """Persist realtime conversation audio as per-turn WAV files."""
 
     def __init__(
         self,
@@ -84,8 +85,8 @@ class ConversationAudioRecorder:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self._write_manifest()
 
-    def buffer_sent_input_audio(self, audio_frame: NDArray[np.int16]) -> None:
-        """Record input audio that was successfully sent to OpenAI."""
+    def buffer_sent_input_audio(self, audio_frame: NDArray[np.int16], *, sample_rate: int | None = None) -> None:
+        """Record input audio that was successfully sent to the realtime backend."""
         chunk = self._chunk_from_audio_frame(audio_frame)
         if chunk.sample_count == 0:
             return
@@ -99,7 +100,7 @@ class ConversationAudioRecorder:
                 removed = self._input_preroll.popleft()
                 self._input_preroll_sample_count -= removed.sample_count
 
-    def start_user_turn(self) -> None:
+    def start_user_turn(self, *, sample_rate: int | None = None) -> None:
         """Start a user input turn, including recent audio already sent before VAD fired."""
         if self._current_user_turn is not None:
             return
@@ -116,6 +117,7 @@ class ConversationAudioRecorder:
             turn_index=self._user_turn_index,
             file_name=file_name,
             started_at=started_at,
+            sample_rate=sample_rate or self.sample_rate,
             chunks=chunks,
         )
 
@@ -129,8 +131,8 @@ class ConversationAudioRecorder:
             turn.metadata["transcript"] = transcript
         self._finish_turn(turn)
 
-    def append_assistant_audio(self, audio_frame: NDArray[np.int16]) -> None:
-        """Record assistant output audio received from OpenAI."""
+    def append_assistant_audio(self, audio_frame: NDArray[np.int16], *, sample_rate: int | None = None) -> None:
+        """Record assistant output audio received from the realtime backend."""
         chunk = self._chunk_from_audio_frame(audio_frame)
         if chunk.sample_count == 0:
             return
@@ -143,6 +145,7 @@ class ConversationAudioRecorder:
                 turn_index=self._assistant_turn_index,
                 file_name=file_name,
                 started_at=chunk.recorded_at,
+                sample_rate=sample_rate or self.sample_rate,
             )
         self._current_assistant_turn.chunks.append(chunk)
 
@@ -170,14 +173,14 @@ class ConversationAudioRecorder:
             with wave.open(str(path), "wb") as wav_file:
                 wav_file.setnchannels(self.channels)
                 wav_file.setsampwidth(self.sample_width_bytes)
-                wav_file.setframerate(self.sample_rate)
+                wav_file.setframerate(turn.sample_rate)
                 for chunk in turn.chunks:
                     wav_file.writeframes(chunk.data)
         except Exception as exc:
             logger.warning("Failed to write audio recording %s: %s", path, exc)
             return
 
-        duration_seconds = turn.sample_count / self.sample_rate
+        duration_seconds = turn.sample_count / turn.sample_rate
         entry = {
             "direction": turn.direction,
             "turn_index": turn.turn_index,
@@ -187,7 +190,7 @@ class ConversationAudioRecorder:
             "ended_at": _isoformat(turn.ended_at),
             "start_offset_seconds": (turn.started_at - self.started_at).total_seconds(),
             "duration_seconds": duration_seconds,
-            "sample_rate": self.sample_rate,
+            "sample_rate": turn.sample_rate,
             "channels": self.channels,
             "sample_width_bytes": self.sample_width_bytes,
             "sample_format": "pcm_s16le",
@@ -195,7 +198,7 @@ class ConversationAudioRecorder:
         }
         self.entries.append(entry)
         self._write_manifest()
-        logger.info("Saved OpenAI audio recording: %s", path)
+        logger.info("Saved realtime audio recording: %s", path)
 
     def _write_manifest(self) -> None:
         manifest = {

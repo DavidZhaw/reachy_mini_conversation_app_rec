@@ -8,6 +8,7 @@ Audio formats (per Gemini Live API spec):
   Output: 16-bit PCM, 24 kHz, mono
 """
 
+import os
 import json
 import time
 import uuid
@@ -16,6 +17,7 @@ import random
 import asyncio
 import logging
 from typing import Any, Dict, List, Final, Tuple, Literal, Optional
+from pathlib import Path
 from datetime import datetime
 
 import numpy as np
@@ -27,6 +29,7 @@ from numpy.typing import NDArray
 from scipy.signal import resample
 
 from reachy_mini_conversation_app.config import (
+    PROJECT_ROOT,
     GEMINI_BACKEND,
     GEMINI_AVAILABLE_VOICES,
     DEFAULT_VOICE_BY_BACKEND,
@@ -35,6 +38,7 @@ from reachy_mini_conversation_app.config import (
 from reachy_mini_conversation_app.prompts import get_session_voice, get_session_instructions
 from reachy_mini_conversation_app.idle_policy import start_idle_tool_call
 from reachy_mini_conversation_app.audio_output import Pcm16PeakNormalizer
+from reachy_mini_conversation_app.audio_recording import ConversationAudioRecorder
 from reachy_mini_conversation_app.tools.core_tools import (
     ToolDependencies,
     get_active_tool_specs,
@@ -151,6 +155,7 @@ class GeminiLiveHandler(ConversationHandler):
         instance_path: Optional[str] = None,
         startup_voice: Optional[str] = None,
         enable_audio_output_normalization: bool = False,
+        record_audio: bool = False,
     ):
         """Initialize the handler."""
         super().__init__(
@@ -188,6 +193,9 @@ class GeminiLiveHandler(ConversationHandler):
         self._listening_state = False
         self.enable_audio_output_normalization = enable_audio_output_normalization
         self.audio_output_normalizer = Pcm16PeakNormalizer() if enable_audio_output_normalization else None
+        self._record_audio = record_audio
+        self._audio_recorder: ConversationAudioRecorder | None = None
+        self._audio_recorder_failed = False
 
     def copy(self) -> "GeminiLiveHandler":
         """Create a copy of the handler."""
@@ -197,7 +205,65 @@ class GeminiLiveHandler(ConversationHandler):
             self.instance_path,
             startup_voice=self._voice_override,
             enable_audio_output_normalization=self.enable_audio_output_normalization,
+            record_audio=self._record_audio,
         )
+
+    def _audio_recordings_root(self) -> Path:
+        """Return the root directory for Gemini audio recordings."""
+        configured_root = (os.getenv("AUDIO_RECORDINGS_DIR") or "").strip()
+        if configured_root:
+            return Path(configured_root).expanduser()
+        return PROJECT_ROOT / "recordings" / GEMINI_BACKEND
+
+    def _get_audio_recorder(self) -> ConversationAudioRecorder | None:
+        """Return the lazy per-run recorder when audio recording is enabled."""
+        if not self._record_audio:
+            return None
+        if self._audio_recorder is not None:
+            return self._audio_recorder
+        if self._audio_recorder_failed:
+            return None
+
+        try:
+            self._audio_recorder = ConversationAudioRecorder(
+                self._audio_recordings_root(),
+                sample_rate=GEMINI_OUTPUT_SAMPLE_RATE,
+            )
+            logger.info("Gemini audio recording directory: %s", self._audio_recorder.run_dir)
+        except Exception as exc:
+            self._audio_recorder_failed = True
+            logger.warning("Gemini audio recording disabled; failed to initialize recorder: %s", exc)
+            return None
+        return self._audio_recorder
+
+    def _record_sent_input_audio(self, audio_frame: NDArray[np.int16]) -> None:
+        """Record audio sent to Gemini."""
+        recorder = self._get_audio_recorder()
+        if recorder is None:
+            return
+        recorder.start_user_turn(sample_rate=GEMINI_INPUT_SAMPLE_RATE)
+        recorder.buffer_sent_input_audio(audio_frame, sample_rate=GEMINI_INPUT_SAMPLE_RATE)
+
+    def _finish_recorded_user_audio_turn(self) -> None:
+        """Finish the active recorded Gemini user turn."""
+        if self._audio_recorder is not None:
+            self._audio_recorder.finish_user_turn()
+
+    def _record_received_assistant_audio(self, audio_frame: NDArray[np.int16]) -> None:
+        """Record assistant audio received from Gemini."""
+        recorder = self._get_audio_recorder()
+        if recorder is not None:
+            recorder.append_assistant_audio(audio_frame, sample_rate=GEMINI_OUTPUT_SAMPLE_RATE)
+
+    def _finish_recorded_assistant_audio_turn(self) -> None:
+        """Finish the active recorded Gemini assistant turn."""
+        if self._audio_recorder is not None:
+            self._audio_recorder.finish_assistant_turn()
+
+    def _close_audio_recording(self) -> None:
+        """Flush Gemini audio recordings."""
+        if self._audio_recorder is not None:
+            self._audio_recorder.close()
 
     def _set_listening_state(self, listening: bool) -> None:
         """Avoid queueing redundant listening-state updates."""
@@ -221,12 +287,14 @@ class GeminiLiveHandler(ConversationHandler):
     async def _mark_model_response_started(self) -> None:
         """Switch out of user-listening mode when the model begins responding."""
         await self._flush_transcript_chunks("user", self._pending_user_transcript_chunks)
+        self._finish_recorded_user_audio_turn()
         self._set_listening_state(False)
 
     async def _handle_interruption(self) -> None:
         """Stop current playback and preserve any transcript already spoken."""
         logger.debug("Gemini: user interrupted")
         await self._flush_transcript_chunks("assistant", self._pending_assistant_transcript_chunks)
+        self._finish_recorded_assistant_audio_turn()
         if self._clear_queue:
             self._clear_queue()
         self._set_listening_state(True)
@@ -236,6 +304,8 @@ class GeminiLiveHandler(ConversationHandler):
         logger.debug("Gemini turn complete")
         await self._flush_transcript_chunks("user", self._pending_user_transcript_chunks)
         await self._flush_transcript_chunks("assistant", self._pending_assistant_transcript_chunks)
+        self._finish_recorded_user_audio_turn()
+        self._finish_recorded_assistant_audio_turn()
         self._set_listening_state(False)
 
     async def apply_personality(self, profile: str | None) -> str:
@@ -610,6 +680,7 @@ class GeminiLiveHandler(ConversationHandler):
                                                 continue
 
                                             self.last_activity_time = time.monotonic()
+                                            self._record_received_assistant_audio(audio_array)
                                             if self.audio_output_normalizer is not None:
                                                 audio_array = self.audio_output_normalizer.process(audio_array)
 
@@ -653,6 +724,7 @@ class GeminiLiveHandler(ConversationHandler):
                     except asyncio.CancelledError:
                         pass
                 await self.tool_manager.shutdown()
+                self._close_audio_recording()
 
     async def receive(self, frame: Tuple[int, NDArray[np.int16]]) -> None:
         """Receive audio frame from microphone and send to Gemini."""
@@ -682,6 +754,7 @@ class GeminiLiveHandler(ConversationHandler):
         try:
             pcm_bytes = audio_frame.tobytes()
             await self.session.send_realtime_input(audio=types.Blob(data=pcm_bytes, mime_type="audio/pcm;rate=16000"))
+            self._record_sent_input_audio(audio_frame)
         except Exception as e:
             logger.debug("Dropping audio frame: session not ready (%s)", e)
             return
@@ -705,6 +778,7 @@ class GeminiLiveHandler(ConversationHandler):
         self._stop_event.set()
 
         await self.tool_manager.shutdown()
+        self._close_audio_recording()
 
         if self.session:
             try:

@@ -1,11 +1,8 @@
-import os
 import logging
 from typing import Any, Literal
 from pathlib import Path
 
-import numpy as np
 from openai import AsyncOpenAI
-from numpy.typing import NDArray
 from openai.types.realtime import (
     AudioTranscriptionParam,
     RealtimeAudioConfigParam,
@@ -16,10 +13,9 @@ from openai.types.realtime import (
 from openai.types.realtime.realtime_audio_formats_param import AudioPCM
 from openai.types.realtime.realtime_audio_input_turn_detection_param import ServerVad
 
-from reachy_mini_conversation_app.config import PROJECT_ROOT, OPENAI_BACKEND, config, get_default_voice_for_backend
+from reachy_mini_conversation_app.config import OPENAI_BACKEND, config, get_default_voice_for_backend
 from reachy_mini_conversation_app.prompts import get_session_voice, get_session_instructions
 from reachy_mini_conversation_app.base_realtime import BaseRealtimeHandler, to_realtime_tools_config
-from reachy_mini_conversation_app.audio_recording import ConversationAudioRecorder
 from reachy_mini_conversation_app.tools.core_tools import ToolDependencies, get_active_tool_specs
 
 
@@ -56,76 +52,10 @@ class OpenaiRealtimeHandler(BaseRealtimeHandler):
             instance_path,
             startup_voice,
             enable_audio_output_normalization=enable_audio_output_normalization,
+            record_audio=record_audio,
         )
         self._key_source: Literal["env", "textbox"] = "env"
         self._provided_api_key: str | None = None
-        self._record_audio = record_audio
-        self._audio_recorder: ConversationAudioRecorder | None = None
-        self._audio_recorder_failed = False
-
-    def copy(self) -> "OpenaiRealtimeHandler":
-        """Create a copy of the handler while preserving OpenAI-specific options."""
-        return type(self)(
-            self.deps,
-            self.gradio_mode,
-            self.instance_path,
-            startup_voice=self._voice_override,
-            record_audio=self._record_audio,
-            enable_audio_output_normalization=self.enable_audio_output_normalization,
-        )
-
-    def _audio_recordings_root(self) -> Path:
-        configured_root = (os.getenv("OPENAI_AUDIO_RECORDINGS_DIR") or "").strip()
-        if configured_root:
-            return Path(configured_root).expanduser()
-        return PROJECT_ROOT / "recordings" / "openai"
-
-    def _get_audio_recorder(self) -> ConversationAudioRecorder | None:
-        if not self._record_audio:
-            return None
-        if self._audio_recorder is not None:
-            return self._audio_recorder
-        if self._audio_recorder_failed:
-            return None
-
-        try:
-            self._audio_recorder = ConversationAudioRecorder(
-                self._audio_recordings_root(),
-                sample_rate=self.SAMPLE_RATE,
-            )
-            logger.info("OpenAI audio recording directory: %s", self._audio_recorder.run_dir)
-        except Exception as exc:
-            self._audio_recorder_failed = True
-            logger.warning("OpenAI audio recording disabled; failed to initialize recorder: %s", exc)
-            return None
-        return self._audio_recorder
-
-    def _record_sent_input_audio(self, audio_frame: NDArray[np.int16]) -> None:
-        recorder = self._get_audio_recorder()
-        if recorder is not None:
-            recorder.buffer_sent_input_audio(audio_frame)
-
-    def _start_recorded_user_audio_turn(self) -> None:
-        recorder = self._get_audio_recorder()
-        if recorder is not None:
-            recorder.start_user_turn()
-
-    def _finish_recorded_user_audio_turn(self, transcript: str | None = None) -> None:
-        if self._audio_recorder is not None:
-            self._audio_recorder.finish_user_turn(transcript=transcript)
-
-    def _record_received_assistant_audio(self, audio_frame: NDArray[np.int16]) -> None:
-        recorder = self._get_audio_recorder()
-        if recorder is not None:
-            recorder.append_assistant_audio(audio_frame)
-
-    def _finish_recorded_assistant_audio_turn(self) -> None:
-        if self._audio_recorder is not None:
-            self._audio_recorder.finish_assistant_turn()
-
-    def _close_audio_recording(self) -> None:
-        if self._audio_recorder is not None:
-            self._audio_recorder.close()
 
     async def _prepare_startup_credentials(self) -> None:
         """Collect an OpenAI API key from Gradio input when needed."""

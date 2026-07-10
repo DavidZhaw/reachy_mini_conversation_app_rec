@@ -1,3 +1,4 @@
+import os
 import json
 import time
 import uuid
@@ -7,6 +8,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, Final, Tuple, ClassVar, Optional
+from pathlib import Path
 from datetime import datetime
 
 import numpy as np
@@ -28,12 +30,14 @@ from openai.resources.realtime.realtime import AsyncRealtimeConnection
 
 from reachy_mini_conversation_app.tools import core_tools
 from reachy_mini_conversation_app.config import (
+    PROJECT_ROOT,
     config,
     get_default_voice_for_backend,
     get_available_voices_for_backend,
 )
 from reachy_mini_conversation_app.idle_policy import start_idle_tool_call
 from reachy_mini_conversation_app.audio_output import Pcm16PeakNormalizer
+from reachy_mini_conversation_app.audio_recording import ConversationAudioRecorder
 from reachy_mini_conversation_app.tools.core_tools import ToolDependencies
 from reachy_mini_conversation_app.conversation_handler import ConversationHandler
 from reachy_mini_conversation_app.tools.background_tool_manager import (
@@ -116,6 +120,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
         instance_path: Optional[str] = None,
         startup_voice: Optional[str] = None,
         enable_audio_output_normalization: bool = False,
+        record_audio: bool = False,
     ):
         """Initialize the handler."""
         sample_rate = self.SAMPLE_RATE
@@ -169,6 +174,9 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
         self._turn_first_audio_at: float | None = None
         self.enable_audio_output_normalization = enable_audio_output_normalization
         self.audio_output_normalizer = Pcm16PeakNormalizer() if enable_audio_output_normalization else None
+        self._record_audio = record_audio
+        self._audio_recorder: ConversationAudioRecorder | None = None
+        self._audio_recorder_failed = False
 
     @staticmethod
     def _sanitize_tool_result_for_model(tool_name: str, tool_result: dict[str, Any]) -> dict[str, Any]:
@@ -284,21 +292,64 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
 
     def _record_sent_input_audio(self, audio_frame: NDArray[np.int16]) -> None:
         """Record audio sent to the realtime server."""
+        recorder = self._get_audio_recorder()
+        if recorder is not None:
+            recorder.buffer_sent_input_audio(audio_frame)
 
     def _start_recorded_user_audio_turn(self) -> None:
         """Start a provider-specific input recording turn."""
+        recorder = self._get_audio_recorder()
+        if recorder is not None:
+            recorder.start_user_turn()
 
     def _finish_recorded_user_audio_turn(self, transcript: str | None = None) -> None:
         """Finish a provider-specific input recording turn."""
+        if self._audio_recorder is not None:
+            self._audio_recorder.finish_user_turn(transcript=transcript)
 
     def _record_received_assistant_audio(self, audio_frame: NDArray[np.int16]) -> None:
         """Record assistant audio received from the realtime server."""
+        recorder = self._get_audio_recorder()
+        if recorder is not None:
+            recorder.append_assistant_audio(audio_frame)
 
     def _finish_recorded_assistant_audio_turn(self) -> None:
         """Finish a provider-specific assistant recording turn."""
+        if self._audio_recorder is not None:
+            self._audio_recorder.finish_assistant_turn()
 
     def _close_audio_recording(self) -> None:
         """Flush provider-specific audio recordings at shutdown/session end."""
+        if self._audio_recorder is not None:
+            self._audio_recorder.close()
+
+    def _audio_recordings_root(self) -> Path:
+        """Return the root directory for realtime audio recordings."""
+        configured_root = (os.getenv("AUDIO_RECORDINGS_DIR") or "").strip()
+        if configured_root:
+            return Path(configured_root).expanduser()
+        return PROJECT_ROOT / "recordings" / self.BACKEND_PROVIDER
+
+    def _get_audio_recorder(self) -> ConversationAudioRecorder | None:
+        """Return the lazy per-run recorder when audio recording is enabled."""
+        if not self._record_audio:
+            return None
+        if self._audio_recorder is not None:
+            return self._audio_recorder
+        if self._audio_recorder_failed:
+            return None
+
+        try:
+            self._audio_recorder = ConversationAudioRecorder(
+                self._audio_recordings_root(),
+                sample_rate=self.SAMPLE_RATE,
+            )
+            logger.info("%s audio recording directory: %s", self.BACKEND_PROVIDER, self._audio_recorder.run_dir)
+        except Exception as exc:
+            self._audio_recorder_failed = True
+            logger.warning("%s audio recording disabled; failed to initialize recorder: %s", self.BACKEND_PROVIDER, exc)
+            return None
+        return self._audio_recorder
 
     def _process_output_audio(self, audio_frame: NDArray[np.int16]) -> NDArray[np.int16]:
         """Optionally normalize assistant audio before playback."""
@@ -314,6 +365,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
             self.instance_path,
             startup_voice=self._voice_override,
             enable_audio_output_normalization=self.enable_audio_output_normalization,
+            record_audio=self._record_audio,
         )
 
     async def change_voice(self, voice: str) -> str:
@@ -904,8 +956,8 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
                     if event.type == "response.output_audio.delta":
                         decoded_pcm_bytes = base64.b64decode(event.delta)
                         decoded_pcm = np.frombuffer(decoded_pcm_bytes, dtype=np.int16).reshape(1, -1)
+                        self._record_received_assistant_audio(decoded_pcm)
                         normalized_pcm = self._process_output_audio(decoded_pcm)
-                        self._record_received_assistant_audio(normalized_pcm)
                         if self.gradio_mode:
                             self._tap_audio_for_daemon_wobbler(normalized_pcm)
                         self._mark_activity("assistant_audio_delta")
