@@ -159,7 +159,7 @@ async def test_realtime_audio_diarization_runs_after_user_wav_is_saved(
     monkeypatch.setattr("reachy_mini_conversation_app.config.config.OPENAI_API_KEY", "test-key")
     monkeypatch.setattr("reachy_mini_conversation_app.config.config.DIARIZATION_MODEL_NAME", "test-diarize-model")
 
-    calls: list[tuple[Path, Path, str, str]] = []
+    calls: list[tuple[Path, Path, str, str, list[str], Path | None]] = []
 
     async def fake_diarize_audio_file(
         *,
@@ -167,14 +167,21 @@ async def test_realtime_audio_diarization_runs_after_user_wav_is_saved(
         output_path: Path,
         model_name: str,
         api_key: str,
+        known_speaker_names: list[str] | None = None,
+        speaker_references_dir: Path | None = None,
     ) -> None:
-        calls.append((wav_path, output_path, model_name, api_key))
+        calls.append((wav_path, output_path, model_name, api_key, list(known_speaker_names or []), speaker_references_dir))
         output_path.write_text('{"ok": true}\n', encoding="utf-8")
 
     monkeypatch.setattr("reachy_mini_conversation_app.openai_diarize.diarize_audio_file", fake_diarize_audio_file)
 
     deps = ToolDependencies(reachy_mini=None, movement_manager=None)
-    handler = OpenaiRealtimeHandler(deps, record_audio=True, record_diarize_audio=True)
+    handler = OpenaiRealtimeHandler(
+        deps,
+        record_audio=True,
+        record_diarize_audio=True,
+        diarize_audio_speaker_names=["bob", "alice"],
+    )
 
     handler._start_recorded_user_audio_turn()
     handler._record_sent_input_audio(np.array([1, 2, 3], dtype=np.int16))
@@ -183,9 +190,12 @@ async def test_realtime_audio_diarization_runs_after_user_wav_is_saved(
     await handler._wait_for_audio_diarization()
 
     assert len(calls) == 1
-    wav_path, output_path, model_name, api_key = calls[0]
+    wav_path, output_path, model_name, api_key, speaker_names, speaker_references_dir = calls[0]
     assert wav_path.name == "turn_0001_user_input.wav"
     assert output_path.name == "turn_0001_user_input.diarization.json"
     assert model_name == "test-diarize-model"
     assert api_key == "test-key"
+    assert speaker_names == ["bob", "alice"]
+    assert speaker_references_dir is not None
+    assert speaker_references_dir.name == "speaker_references"
     assert output_path.exists()

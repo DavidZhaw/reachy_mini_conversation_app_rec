@@ -205,7 +205,7 @@ The app runs in console mode by default. Add `--gradio` to launch a web UI at ht
 | `--local-vision` | `False` | Use the local vision model (SmolVLM2) for camera-tool requests instead of the selected realtime backend. Requires `local_vision` extra to be installed. |
 | `--gradio` | `False` | Launch the Gradio web UI. Without this flag, runs in console mode. Required when running in simulation mode. |
 | `--record-audio` | `False` | Save realtime audio sent to and received from the selected backend as per-turn WAV files plus `manifest.json` in `recordings/<backend>/<run timestamp>/`. |
-| `--diarize-audio` | `False` | Diarize saved user-input WAV files with OpenAI after each user turn is recorded. Requires `--record-audio`, `OPENAI_API_KEY`, and `DIARIZATION_MODEL_NAME`. |
+| `--diarize-audio [SPEAKER ...]` | `False` | Diarize saved user-input WAV files with OpenAI after each user turn is recorded. Optionally pass known speaker names, either as space-separated values or as a JSON array. Requires `--record-audio`, `OPENAI_API_KEY`, and `DIARIZATION_MODEL_NAME`. |
 | `--normalize-output-audio` | `False` | Increase assistant playback volume with smoothed peak normalization. Useful when voices/backends have noticeably different output levels. |
 | `--robot-name` | `None` | Optional. Connect to a specific robot by name when running multiple daemons on the same subnet. See [Multiple robots on the same subnet](#advanced-features). |
 | `--debug` | `False` | Enable verbose logging for troubleshooting. |
@@ -234,6 +234,12 @@ reachy-mini-conversation-app --record-audio
 # Record realtime audio turns and diarize user-input WAV files
 reachy-mini-conversation-app --record-audio --diarize-audio
 
+# Diarize with known speaker names
+reachy-mini-conversation-app --record-audio --diarize-audio bob alice
+
+# Equivalent JSON-array form
+reachy-mini-conversation-app --record-audio --diarize-audio '["bob","alice"]'
+
 # Boost assistant playback volume with smoothed output normalization
 reachy-mini-conversation-app --normalize-output-audio
 ```
@@ -241,6 +247,8 @@ reachy-mini-conversation-app --normalize-output-audio
 Audio recording is disabled by default. When enabled, each conversation run creates a new folder under `recordings/<backend>/`. It writes per-turn WAV files and `manifest.json` under `recordings/<backend>/<run timestamp>/` for audio sent to and received from the selected realtime backend. Set `AUDIO_RECORDINGS_DIR` to override that root directory.
 
 Audio diarization is disabled by default and only runs when `--record-audio` is also enabled. It sends each saved user-input WAV to OpenAI's audio transcriptions endpoint using `DIARIZATION_MODEL_NAME` and writes a matching `*.diarization.json` file in the same recording folder. Assistant audio returned by the realtime model is not diarized.
+
+When speaker names are passed to `--diarize-audio`, they are sent to OpenAI as `known_speaker_names`. The app also looks in `speaker_references/` for matching reference recordings by file stem, such as `speaker_references/bob.wav` for `bob`, and sends any matches as `known_speaker_references`.
 
 Output audio normalization is disabled by default. When enabled, assistant audio snippets are peak-normalized with smoothing and a quiet-pause gate to reduce backend/voice volume differences without boosting silence.
 

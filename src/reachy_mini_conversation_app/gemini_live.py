@@ -157,6 +157,7 @@ class GeminiLiveHandler(ConversationHandler):
         enable_audio_output_normalization: bool = False,
         record_audio: bool = False,
         record_diarize_audio: bool = False,
+        diarize_audio_speaker_names: list[str] | None = None,
     ):
         """Initialize the handler."""
         super().__init__(
@@ -198,6 +199,7 @@ class GeminiLiveHandler(ConversationHandler):
         self._record_diarize_audio = record_audio and record_diarize_audio
         if record_diarize_audio and not record_audio:
             logger.warning("--diarize-audio requires --record-audio; diarization is disabled.")
+        self._diarize_audio_speaker_names = list(diarize_audio_speaker_names or [])
         self._audio_recorder: ConversationAudioRecorder | None = None
         self._audio_recorder_failed = False
         self._diarization_tasks: set[asyncio.Task[None]] = set()
@@ -213,6 +215,7 @@ class GeminiLiveHandler(ConversationHandler):
             enable_audio_output_normalization=self.enable_audio_output_normalization,
             record_audio=self._record_audio,
             record_diarize_audio=self._record_diarize_audio,
+            diarize_audio_speaker_names=self._diarize_audio_speaker_names,
         )
 
     def _audio_recordings_root(self) -> Path:
@@ -281,6 +284,8 @@ class GeminiLiveHandler(ConversationHandler):
                 output_path=output_path,
                 model_name=config.DIARIZATION_MODEL_NAME,
                 api_key=api_key,
+                known_speaker_names=self._diarize_audio_speaker_names,
+                speaker_references_dir=PROJECT_ROOT / "speaker_references",
             )
         except asyncio.CancelledError:
             raise

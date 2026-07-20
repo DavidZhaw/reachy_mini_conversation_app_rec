@@ -4,7 +4,7 @@ import logging
 import argparse
 import warnings
 import subprocess
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from reachy_mini import ReachyMini
 from reachy_mini_conversation_app.camera_worker import CameraWorker
@@ -13,6 +13,51 @@ from reachy_mini_conversation_app.vision.head_tracking import HeadTracker
 
 if TYPE_CHECKING:
     from reachy_mini_conversation_app.vision.local_vision import VisionProcessor
+
+
+class DiarizeAudioAction(argparse.Action):
+    """Parse --diarize-audio as either a flag or a speaker-name list."""
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
+        """Store True for flag usage or speaker names for value usage."""
+        del option_string
+        if not values:
+            setattr(namespace, self.dest, True)
+            return
+
+        if len(values) == 1:
+            raw_value = str(values[0]).strip()
+            if raw_value.startswith("["):
+                try:
+                    import json
+
+                    parsed = json.loads(raw_value)
+                except json.JSONDecodeError as exc:
+                    parser.error(f"--diarize-audio expected a JSON array of speaker names: {exc}")
+                if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+                    parser.error("--diarize-audio expected a JSON array of speaker name strings")
+                setattr(namespace, self.dest, parsed)
+                return
+
+        setattr(namespace, self.dest, [str(value) for value in values])
+
+
+def diarize_audio_enabled(value: bool | list[str]) -> bool:
+    """Return whether the parsed --diarize-audio option enables diarization."""
+    return value is True or isinstance(value, list)
+
+
+def diarize_audio_speaker_names(value: bool | list[str]) -> list[str]:
+    """Return speaker names from the parsed --diarize-audio option."""
+    if isinstance(value, list):
+        return value
+    return []
 
 
 class CameraVisionInitializationError(Exception):
@@ -49,8 +94,13 @@ def parse_args() -> tuple[argparse.Namespace, list]:  # type: ignore
         "--diarize-audio",
         dest="diarize_audio",
         default=False,
-        action="store_true",
-        help="Diarize recorded user audio with OpenAI after saving each user WAV; requires --record-audio",
+        nargs="*",
+        action=DiarizeAudioAction,
+        metavar="SPEAKER",
+        help=(
+            "Diarize recorded user audio with OpenAI after saving each user WAV; requires --record-audio. "
+            'Optionally pass speaker names, e.g. --diarize-audio bob alice or --diarize-audio \'["bob","alice"]\'.'
+        ),
     )
     parser.add_argument(
         "--normalize-output-audio",

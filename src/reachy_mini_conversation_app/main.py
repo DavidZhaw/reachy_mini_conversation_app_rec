@@ -21,6 +21,8 @@ from reachy_mini_conversation_app.utils import (
     CameraVisionInitializationError,
     parse_args,
     setup_logger,
+    diarize_audio_enabled,
+    diarize_audio_speaker_names,
     initialize_camera_and_vision,
     log_connection_troubleshooting,
 )
@@ -76,6 +78,8 @@ def run(
     logger = setup_logger(args.debug)
     logger.info("Starting Reachy Mini Conversation App")
     startup_settings = StartupSettings()
+    record_diarize_audio = diarize_audio_enabled(args.diarize_audio)
+    diarize_speaker_names = diarize_audio_speaker_names(args.diarize_audio)
 
     if instance_path is not None:
         try:
@@ -192,7 +196,8 @@ def run(
                 startup_voice=startup_voice,
                 enable_audio_output_normalization=args.normalize_output_audio,
                 record_audio=args.record_audio,
-                record_diarize_audio=args.diarize_audio,
+                record_diarize_audio=record_diarize_audio,
+                diarize_audio_speaker_names=diarize_speaker_names,
             )
         if config.BACKEND_PROVIDER == HF_BACKEND:
             from reachy_mini_conversation_app.huggingface_realtime import HuggingFaceRealtimeHandler
@@ -215,7 +220,8 @@ def run(
                 startup_voice=startup_voice,
                 enable_audio_output_normalization=args.normalize_output_audio,
                 record_audio=args.record_audio,
-                record_diarize_audio=args.diarize_audio,
+                record_diarize_audio=record_diarize_audio,
+                diarize_audio_speaker_names=diarize_speaker_names,
             )
 
         from reachy_mini_conversation_app.openai_realtime import OpenaiRealtimeHandler
@@ -230,7 +236,8 @@ def run(
             instance_path=instance_path,
             startup_voice=startup_voice,
             record_audio=args.record_audio,
-            record_diarize_audio=args.diarize_audio,
+            record_diarize_audio=record_diarize_audio,
+            diarize_audio_speaker_names=diarize_speaker_names,
             enable_audio_output_normalization=args.normalize_output_audio,
         )
 
