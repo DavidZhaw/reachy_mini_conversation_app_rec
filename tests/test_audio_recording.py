@@ -38,6 +38,7 @@ def test_audio_recorder_writes_per_turn_wavs_and_manifest(tmp_path: Path) -> Non
         "turn_0001_assistant_output.wav",
     ]
     assert entries[0]["direction"] == "user_input"
+    assert entries[0]["speaker_name"] == "unknown"
     assert entries[0]["transcript"] == "hello"
     assert entries[0]["duration_seconds"] == pytest.approx(6 / 24_000)
     assert entries[0]["started_at"] == entries[0]["recorded_at"]
@@ -68,8 +69,23 @@ def test_audio_recorder_reports_saved_user_turn_for_diarization(tmp_path: Path) 
     wav_path, entry = saved[0]
     assert wav_path.name == "turn_0001_user_input.wav"
     assert entry["diarization_file_name"] == "turn_0001_user_input.diarization.json"
+    assert entry["speaker_name"] == "unknown"
     manifest = _read_manifest(recorder.run_dir)
     assert manifest["entries"][0]["diarization_file_name"] == "turn_0001_user_input.diarization.json"
+    assert manifest["entries"][0]["speaker_name"] == "unknown"
+
+
+def test_audio_recorder_updates_saved_user_turn_speaker_name(tmp_path: Path) -> None:
+    """Recorder should update user-input speaker names in the manifest."""
+    recorder = ConversationAudioRecorder(tmp_path, sample_rate=24_000)
+
+    recorder.start_user_turn()
+    recorder.buffer_sent_input_audio(np.array([1, 2], dtype=np.int16))
+    recorder.finish_user_turn()
+
+    assert recorder.update_user_turn_speaker_name(file_name="turn_0001_user_input.wav", speaker_name="bob") is True
+    manifest = _read_manifest(recorder.run_dir)
+    assert manifest["entries"][0]["speaker_name"] == "bob"
 
 
 @pytest.mark.asyncio
@@ -173,7 +189,20 @@ async def test_realtime_audio_diarization_runs_after_user_wav_is_saved(
         speaker_references_dir: Path | None = None,
     ) -> None:
         calls.append((wav_path, output_path, model_name, api_key, list(known_speaker_names or []), speaker_references_dir))
-        output_path.write_text('{"ok": true}\n', encoding="utf-8")
+        output_path.write_text(
+            json.dumps(
+                {
+                    "response": {
+                        "segments": [
+                            {"speaker": "bob", "start": 0.0, "end": 2.0},
+                            {"speaker": "alice", "start": 2.0, "end": 2.5},
+                        ],
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
     monkeypatch.setattr("reachy_mini_conversation_app.openai_diarize.diarize_audio_file", fake_diarize_audio_file)
 
@@ -188,6 +217,9 @@ async def test_realtime_audio_diarization_runs_after_user_wav_is_saved(
     handler._start_recorded_user_audio_turn()
     handler._record_sent_input_audio(np.array([1, 2, 3], dtype=np.int16))
     handler._finish_recorded_user_audio_turn("hello")
+    assert handler._audio_recorder is not None
+    manifest = _read_manifest(handler._audio_recorder.run_dir)
+    assert manifest["entries"][0]["speaker_name"] == "unknown"
     await asyncio.sleep(0)
     await handler._wait_for_audio_diarization()
 
@@ -200,3 +232,5 @@ async def test_realtime_audio_diarization_runs_after_user_wav_is_saved(
     assert speaker_names == ["bob", "alice"]
     assert speaker_references_dir == speaker_reference_dir
     assert output_path.exists()
+    manifest = _read_manifest(handler._audio_recorder.run_dir)
+    assert manifest["entries"][0]["speaker_name"] == "bob"

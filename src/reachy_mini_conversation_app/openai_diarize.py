@@ -27,6 +27,36 @@ def _serialize_response(response: Any) -> Any:
         return {"raw": repr(response)}
 
 
+def extract_speaker_name_from_diarization_payload(payload: dict[str, Any]) -> str:
+    """Return the dominant speaker name from a saved diarization payload."""
+    response = payload.get("response")
+    if not isinstance(response, dict):
+        return "unknown"
+
+    segments = response.get("segments")
+    if not isinstance(segments, list):
+        return "unknown"
+
+    speaker_durations: dict[str, float] = {}
+    speaker_order: list[str] = []
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        speaker = segment.get("speaker")
+        if not isinstance(speaker, str) or not speaker.strip():
+            continue
+        speaker_name = speaker.strip()
+        if speaker_name not in speaker_durations:
+            speaker_order.append(speaker_name)
+            speaker_durations[speaker_name] = 0.0
+        duration = _segment_duration(segment)
+        speaker_durations[speaker_name] += duration if duration is not None else 1.0
+
+    if not speaker_order:
+        return "unknown"
+    return max(speaker_order, key=lambda name: speaker_durations[name])
+
+
 async def diarize_audio_file(
     *,
     wav_path: Path,
@@ -72,6 +102,15 @@ async def diarize_audio_file(
     }
     output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     logger.info("Saved audio diarization: %s", output_path)
+
+
+def _segment_duration(segment: dict[str, Any]) -> float | None:
+    """Return segment duration when start/end timestamps are numeric."""
+    start = segment.get("start")
+    end = segment.get("end")
+    if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+        return None
+    return max(0.0, float(end) - float(start))
 
 
 def _normalize_speaker_names(speaker_names: list[str] | None) -> list[str]:

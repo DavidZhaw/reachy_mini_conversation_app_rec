@@ -200,11 +200,24 @@ class ConversationAudioRecorder:
         }
         if turn.direction == "user_input" and self.on_user_turn_saved is not None:
             entry["diarization_file_name"] = path.with_suffix(".diarization.json").name
+        if turn.direction == "user_input":
+            entry["speaker_name"] = "unknown"
         self.entries.append(entry)
         self._write_manifest()
         if turn.direction == "user_input" and self.on_user_turn_saved is not None:
             self.on_user_turn_saved(path, entry)
         logger.info("Saved realtime audio recording: %s", path)
+
+    def update_user_turn_speaker_name(self, *, file_name: str, speaker_name: str) -> bool:
+        """Update one saved user-input manifest entry with a diarized speaker name."""
+        normalized_speaker_name = (speaker_name or "").strip() or "unknown"
+        for entry in self.entries:
+            if entry.get("direction") != "user_input" or entry.get("file_name") != file_name:
+                continue
+            entry["speaker_name"] = normalized_speaker_name
+            self._write_manifest()
+            return True
+        return False
 
     def _write_manifest(self) -> None:
         manifest = {

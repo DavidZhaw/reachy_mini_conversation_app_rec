@@ -277,7 +277,10 @@ class GeminiLiveHandler(ConversationHandler):
     async def _run_audio_diarization(self, *, wav_path: Path, output_path: Path, api_key: str) -> None:
         """Run one OpenAI diarization job."""
         try:
-            from reachy_mini_conversation_app.openai_diarize import diarize_audio_file
+            from reachy_mini_conversation_app.openai_diarize import (
+                diarize_audio_file,
+                extract_speaker_name_from_diarization_payload,
+            )
 
             await diarize_audio_file(
                 wav_path=wav_path,
@@ -287,6 +290,13 @@ class GeminiLiveHandler(ConversationHandler):
                 known_speaker_names=self._diarize_audio_speaker_names,
                 speaker_references_dir=config.SPEAKER_REFERENCE_DIR,
             )
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+            speaker_name = extract_speaker_name_from_diarization_payload(payload)
+            if self._audio_recorder is not None:
+                self._audio_recorder.update_user_turn_speaker_name(
+                    file_name=wav_path.name,
+                    speaker_name=speaker_name,
+                )
         except asyncio.CancelledError:
             raise
         except Exception as exc:

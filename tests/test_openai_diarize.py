@@ -97,3 +97,23 @@ async def test_diarize_audio_file_sends_known_speakers_and_available_references(
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["known_speaker_names"] == ["bob", "alice"]
     assert payload["known_speaker_reference_file_names"] == ["bob.wav"]
+
+
+def test_extract_speaker_name_from_diarization_payload_uses_dominant_speaker() -> None:
+    """Speaker extraction should prefer the longest diarized speaker duration."""
+    payload = {
+        "response": {
+            "segments": [
+                {"speaker": "alice", "start": 0.0, "end": 1.0},
+                {"speaker": "bob", "start": 1.0, "end": 4.5},
+                {"speaker": "alice", "start": 4.5, "end": 5.0},
+            ],
+        },
+    }
+
+    assert diarize_mod.extract_speaker_name_from_diarization_payload(payload) == "bob"
+
+
+def test_extract_speaker_name_from_diarization_payload_defaults_to_unknown() -> None:
+    """Missing diarization segments should map to unknown."""
+    assert diarize_mod.extract_speaker_name_from_diarization_payload({"response": {}}) == "unknown"

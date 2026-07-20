@@ -245,9 +245,9 @@ reachy-mini-conversation-app --record-audio --diarize-audio '["bob","alice"]'
 reachy-mini-conversation-app --normalize-output-audio
 ```
 
-Audio recording is disabled by default. When enabled, each conversation run creates a new folder under `recordings/<backend>/`. It writes per-turn WAV files and `manifest.json` under `recordings/<backend>/<run timestamp>/` for audio sent to and received from the selected realtime backend. Set `AUDIO_RECORDINGS_DIR` to override that root directory.
+Audio recording is disabled by default. When enabled, each conversation run creates a new folder under `recordings/<backend>/`. It writes per-turn WAV files and `manifest.json` under `recordings/<backend>/<run timestamp>/` for audio sent to and received from the selected realtime backend. User-input entries include `speaker_name`, initialized to `unknown`. Set `AUDIO_RECORDINGS_DIR` to override that root directory.
 
-Audio diarization is disabled by default and only runs when `--record-audio` is also enabled. It sends each saved user-input WAV to OpenAI's audio transcriptions endpoint using `DIARIZATION_MODEL_NAME` and writes a matching `*.diarization.json` file in the same recording folder. Assistant audio returned by the realtime model is not diarized.
+Audio diarization is disabled by default and only runs when `--record-audio` is also enabled. It sends each saved user-input WAV to OpenAI's audio transcriptions endpoint using `DIARIZATION_MODEL_NAME` and writes a matching `*.diarization.json` file in the same recording folder. When diarization completes, the matching `manifest.json` user-input entry is updated with the dominant diarized speaker. Assistant audio returned by the realtime model is not diarized.
 
 When speaker names are passed to `--diarize-audio`, they are sent to OpenAI as `known_speaker_names`. The app also looks in `SPEAKER_REFERENCE_DIR` for matching reference recordings by file stem, such as `speaker_references/bob.wav` for `bob`, and sends any matches as `known_speaker_references`.
 
