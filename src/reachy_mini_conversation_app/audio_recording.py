@@ -151,11 +151,13 @@ class ConversationAudioRecorder:
             )
         self._current_assistant_turn.chunks.append(chunk)
 
-    def finish_assistant_turn(self) -> None:
+    def finish_assistant_turn(self, *, transcript: str | None = None) -> None:
         """Persist the active assistant turn, if one exists."""
         turn = self._current_assistant_turn
         self._current_assistant_turn = None
         if turn is not None:
+            if transcript is not None:
+                turn.metadata["transcript"] = transcript
             self._finish_turn(turn)
 
     def close(self) -> None:
@@ -215,6 +217,24 @@ class ConversationAudioRecorder:
             if entry.get("direction") != "user_input" or entry.get("file_name") != file_name:
                 continue
             entry["speaker_name"] = normalized_speaker_name
+            self._write_manifest()
+            return True
+        return False
+
+    def update_latest_assistant_turn_transcript(self, transcript: str) -> bool:
+        """Attach an available assistant transcript to the active or latest assistant recording."""
+        normalized_transcript = transcript.strip()
+        if not normalized_transcript:
+            return False
+
+        if self._current_assistant_turn is not None:
+            self._current_assistant_turn.metadata["transcript"] = normalized_transcript
+            return True
+
+        for entry in reversed(self.entries):
+            if entry.get("direction") != "assistant_output":
+                continue
+            entry["transcript"] = normalized_transcript
             self._write_manifest()
             return True
         return False

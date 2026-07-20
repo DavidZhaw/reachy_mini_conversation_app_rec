@@ -326,10 +326,10 @@ class GeminiLiveHandler(ConversationHandler):
         if recorder is not None:
             recorder.append_assistant_audio(audio_frame, sample_rate=GEMINI_OUTPUT_SAMPLE_RATE)
 
-    def _finish_recorded_assistant_audio_turn(self) -> None:
+    def _finish_recorded_assistant_audio_turn(self, transcript: str | None = None) -> None:
         """Finish the active recorded Gemini assistant turn."""
         if self._audio_recorder is not None:
-            self._audio_recorder.finish_assistant_turn()
+            self._audio_recorder.finish_assistant_turn(transcript=transcript)
 
     def _close_audio_recording(self) -> None:
         """Flush Gemini audio recordings."""
@@ -343,17 +343,18 @@ class GeminiLiveHandler(ConversationHandler):
         self._listening_state = listening
         self.deps.movement_manager.set_listening(listening)
 
-    async def _flush_transcript_chunks(self, role: str, chunks: list[str]) -> None:
+    async def _flush_transcript_chunks(self, role: str, chunks: list[str]) -> str | None:
         """Emit one finalized transcript message for the current turn."""
         if not chunks:
-            return
+            return None
 
         transcript = "".join(chunks).strip()
         chunks.clear()
         if not transcript:
-            return
+            return None
 
         await self.output_queue.put(AdditionalOutputs({"role": role, "content": transcript}))
+        return transcript
 
     async def _mark_model_response_started(self) -> None:
         """Switch out of user-listening mode when the model begins responding."""
@@ -364,8 +365,8 @@ class GeminiLiveHandler(ConversationHandler):
     async def _handle_interruption(self) -> None:
         """Stop current playback and preserve any transcript already spoken."""
         logger.debug("Gemini: user interrupted")
-        await self._flush_transcript_chunks("assistant", self._pending_assistant_transcript_chunks)
-        self._finish_recorded_assistant_audio_turn()
+        assistant_transcript = await self._flush_transcript_chunks("assistant", self._pending_assistant_transcript_chunks)
+        self._finish_recorded_assistant_audio_turn(assistant_transcript)
         if self._clear_queue:
             self._clear_queue()
         self._set_listening_state(True)
@@ -374,9 +375,9 @@ class GeminiLiveHandler(ConversationHandler):
         """Finalize the current turn and restore post-speech motion state."""
         logger.debug("Gemini turn complete")
         await self._flush_transcript_chunks("user", self._pending_user_transcript_chunks)
-        await self._flush_transcript_chunks("assistant", self._pending_assistant_transcript_chunks)
+        assistant_transcript = await self._flush_transcript_chunks("assistant", self._pending_assistant_transcript_chunks)
         self._finish_recorded_user_audio_turn()
-        self._finish_recorded_assistant_audio_turn()
+        self._finish_recorded_assistant_audio_turn(assistant_transcript)
         self._set_listening_state(False)
 
     async def apply_personality(self, profile: str | None) -> str:

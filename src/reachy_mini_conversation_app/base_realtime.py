@@ -174,6 +174,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
         self._turn_user_done_at: float | None = None
         self._turn_response_created_at: float | None = None
         self._turn_first_audio_at: float | None = None
+        self._pending_assistant_audio_transcript: str | None = None
         self.enable_audio_output_normalization = enable_audio_output_normalization
         self.audio_output_normalizer = Pcm16PeakNormalizer() if enable_audio_output_normalization else None
         self._record_audio = record_audio
@@ -320,11 +321,23 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
         recorder = self._get_audio_recorder()
         if recorder is not None:
             recorder.append_assistant_audio(audio_frame)
+            if self._pending_assistant_audio_transcript is not None:
+                if recorder.update_latest_assistant_turn_transcript(self._pending_assistant_audio_transcript):
+                    self._pending_assistant_audio_transcript = None
 
     def _finish_recorded_assistant_audio_turn(self) -> None:
         """Finish a provider-specific assistant recording turn."""
         if self._audio_recorder is not None:
             self._audio_recorder.finish_assistant_turn()
+
+    def _record_assistant_transcript(self, transcript: str | None) -> None:
+        """Attach an already-provided assistant transcript to the assistant recording."""
+        if transcript is None:
+            return
+        if self._audio_recorder is not None and self._audio_recorder.update_latest_assistant_turn_transcript(transcript):
+            self._pending_assistant_audio_transcript = None
+            return
+        self._pending_assistant_audio_transcript = transcript
 
     def _close_audio_recording(self) -> None:
         """Flush provider-specific audio recordings at shutdown/session end."""
@@ -1020,6 +1033,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
                     if event.type == "response.output_audio_transcript.done":
                         self._mark_activity("assistant_transcript_done")
                         logger.debug(f"Assistant transcript: {event.transcript}")
+                        self._record_assistant_transcript(event.transcript)
                         await self.output_queue.put(
                             AdditionalOutputs({"role": "assistant", "content": event.transcript})
                         )

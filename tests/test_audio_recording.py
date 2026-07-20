@@ -28,7 +28,7 @@ def test_audio_recorder_writes_per_turn_wavs_and_manifest(tmp_path: Path) -> Non
     recorder.finish_user_turn(transcript="hello")
 
     recorder.append_assistant_audio(np.array([[10, 11, 12]], dtype=np.int16))
-    recorder.finish_assistant_turn()
+    recorder.finish_assistant_turn(transcript="hi there")
 
     manifest = _read_manifest(recorder.run_dir)
     entries = manifest["entries"]
@@ -44,6 +44,7 @@ def test_audio_recorder_writes_per_turn_wavs_and_manifest(tmp_path: Path) -> Non
     assert entries[0]["started_at"] == entries[0]["recorded_at"]
     assert entries[0]["start_offset_seconds"] >= 0
     assert entries[1]["direction"] == "assistant_output"
+    assert entries[1]["transcript"] == "hi there"
 
     with wave.open(str(recorder.run_dir / "turn_0001_user_input.wav"), "rb") as wav_file:
         assert wav_file.getframerate() == 24_000
@@ -86,6 +87,18 @@ def test_audio_recorder_updates_saved_user_turn_speaker_name(tmp_path: Path) -> 
     assert recorder.update_user_turn_speaker_name(file_name="turn_0001_user_input.wav", speaker_name="bob") is True
     manifest = _read_manifest(recorder.run_dir)
     assert manifest["entries"][0]["speaker_name"] == "bob"
+
+
+def test_audio_recorder_updates_latest_assistant_turn_transcript_after_save(tmp_path: Path) -> None:
+    """Recorder should attach late assistant transcripts to the latest assistant output entry."""
+    recorder = ConversationAudioRecorder(tmp_path, sample_rate=24_000)
+
+    recorder.append_assistant_audio(np.array([1, 2], dtype=np.int16))
+    recorder.finish_assistant_turn()
+
+    assert recorder.update_latest_assistant_turn_transcript("hello from assistant") is True
+    manifest = _read_manifest(recorder.run_dir)
+    assert manifest["entries"][0]["transcript"] == "hello from assistant"
 
 
 @pytest.mark.asyncio
@@ -163,6 +176,65 @@ def test_gemini_audio_recording_preserves_input_and_output_sample_rates(
     assert manifest["entries"][1]["direction"] == "assistant_output"
     assert manifest["entries"][1]["sample_rate"] == 24_000
     assert manifest["entries"][1]["duration_seconds"] == pytest.approx(4 / 24_000)
+
+
+def test_openai_realtime_records_assistant_transcript_when_provided(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    """OpenAI-compatible handlers should save assistant transcripts already provided by realtime."""
+    monkeypatch.setenv("AUDIO_RECORDINGS_DIR", str(tmp_path))
+
+    deps = ToolDependencies(reachy_mini=None, movement_manager=None)
+    handler = OpenaiRealtimeHandler(deps, record_audio=True)
+
+    handler._record_received_assistant_audio(np.array([1, 2, 3], dtype=np.int16))
+    handler._finish_recorded_assistant_audio_turn()
+    assert handler._audio_recorder is not None
+    handler._record_assistant_transcript("hello from assistant")
+
+    manifest = _read_manifest(handler._audio_recorder.run_dir)
+    assert manifest["entries"][0]["direction"] == "assistant_output"
+    assert manifest["entries"][0]["transcript"] == "hello from assistant"
+
+
+def test_openai_realtime_records_assistant_transcript_when_it_arrives_before_audio(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    """OpenAI-compatible handlers should keep transcript/audio association if transcript wins the race."""
+    monkeypatch.setenv("AUDIO_RECORDINGS_DIR", str(tmp_path))
+
+    deps = ToolDependencies(reachy_mini=None, movement_manager=None)
+    handler = OpenaiRealtimeHandler(deps, record_audio=True)
+
+    handler._record_assistant_transcript("early assistant transcript")
+    handler._record_received_assistant_audio(np.array([1, 2, 3], dtype=np.int16))
+    handler._finish_recorded_assistant_audio_turn()
+
+    assert handler._audio_recorder is not None
+    manifest = _read_manifest(handler._audio_recorder.run_dir)
+    assert manifest["entries"][0]["direction"] == "assistant_output"
+    assert manifest["entries"][0]["transcript"] == "early assistant transcript"
+
+
+def test_gemini_records_assistant_transcript_when_finishing_turn(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    """Gemini should save assistant output transcription chunks when ending recorded audio."""
+    monkeypatch.setenv("AUDIO_RECORDINGS_DIR", str(tmp_path))
+
+    deps = ToolDependencies(reachy_mini=None, movement_manager=None)
+    handler = GeminiLiveHandler(deps, record_audio=True)
+
+    handler._record_received_assistant_audio(np.array([1, 2, 3], dtype=np.int16))
+    handler._finish_recorded_assistant_audio_turn("hello from gemini")
+
+    assert handler._audio_recorder is not None
+    manifest = _read_manifest(handler._audio_recorder.run_dir)
+    assert manifest["entries"][0]["direction"] == "assistant_output"
+    assert manifest["entries"][0]["transcript"] == "hello from gemini"
 
 
 @pytest.mark.asyncio
