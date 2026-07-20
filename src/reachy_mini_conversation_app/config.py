@@ -93,6 +93,7 @@ HF_REALTIME_CONNECTION_MODE_ENV = "HF_REALTIME_CONNECTION_MODE"
 HF_REALTIME_WS_URL_ENV = "HF_REALTIME_WS_URL"
 REALTIME_TRANSCRIPTION_LANGUAGE_ENV = "REALTIME_TRANSCRIPTION_LANGUAGE"
 DEFAULT_DIARIZATION_MODEL_NAME = "gpt-4o-transcribe-diarize"
+DEFAULT_SPEAKER_REFERENCE_DIR = "speaker_references"
 HF_LOCAL_CONNECTION_MODE = "local"
 HF_DEPLOYED_CONNECTION_MODE = "deployed"
 HF_REALTIME_SESSION_PROXY_URL = "https://pollen-robotics-reachy-mini-realtime-url.hf.space/session"
@@ -217,6 +218,14 @@ def _normalize_transcription_language(value: str | None) -> str:
     """Return the configured realtime transcription language."""
     candidate = (value or "").strip()
     return candidate or "en"
+
+
+def _resolve_project_path(value: str | None, default: str) -> Path:
+    """Resolve a configured path, treating relative values as project-root relative."""
+    candidate = Path((value or default).strip() or default).expanduser()
+    if candidate.is_absolute():
+        return candidate
+    return PROJECT_ROOT / candidate
 
 
 @dataclass(frozen=True)
@@ -366,6 +375,7 @@ class Config:
     )
     MODEL_NAME = _resolve_model_name(BACKEND_PROVIDER, os.getenv("MODEL_NAME"))
     DIARIZATION_MODEL_NAME = os.getenv("DIARIZATION_MODEL_NAME", DEFAULT_DIARIZATION_MODEL_NAME)
+    SPEAKER_REFERENCE_DIR = _resolve_project_path(os.getenv("SPEAKER_REFERENCE_DIR"), DEFAULT_SPEAKER_REFERENCE_DIR)
     HF_REALTIME_CONNECTION_MODE = (
         _normalize_hf_connection_mode(os.getenv(HF_REALTIME_CONNECTION_MODE_ENV)) or HF_DEFAULTS.connection_mode
     )
@@ -471,6 +481,7 @@ def refresh_runtime_config_from_env() -> None:
     )
     config.MODEL_NAME = _resolve_model_name(config.BACKEND_PROVIDER, os.getenv("MODEL_NAME"))
     config.DIARIZATION_MODEL_NAME = os.getenv("DIARIZATION_MODEL_NAME", DEFAULT_DIARIZATION_MODEL_NAME)
+    config.SPEAKER_REFERENCE_DIR = _resolve_project_path(os.getenv("SPEAKER_REFERENCE_DIR"), DEFAULT_SPEAKER_REFERENCE_DIR)
     config.HF_REALTIME_CONNECTION_MODE = (
         _normalize_hf_connection_mode(os.getenv(HF_REALTIME_CONNECTION_MODE_ENV)) or HF_DEFAULTS.connection_mode
     )

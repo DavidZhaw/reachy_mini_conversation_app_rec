@@ -133,6 +133,7 @@ Copy `.env.example` to `.env` when you want to switch backends, provide API keys
 | `BACKEND_PROVIDER` | Realtime backend to use: `huggingface` (default), `openai`, or `gemini`. |
 | `MODEL_NAME` | Optional model override for OpenAI Realtime or Gemini Live. Defaults to `gpt-realtime-2` for OpenAI and `gemini-3.1-flash-live-preview` for Gemini. Hugging Face uses the server's model selection. |
 | `DIARIZATION_MODEL_NAME` | Optional OpenAI model for `--diarize-audio`. Defaults to `gpt-4o-transcribe-diarize`. |
+| `SPEAKER_REFERENCE_DIR` | Optional directory for `--diarize-audio` speaker reference recordings. Defaults to `speaker_references`; relative paths are resolved from the project root. |
 | `REALTIME_TRANSCRIPTION_LANGUAGE` | Optional input transcription language for realtime backends. Defaults to `en`; set to a backend-supported code such as `zh` for Chinese. |
 | `HF_REALTIME_CONNECTION_MODE` | Hugging Face connection selector: `deployed` uses the built-in Hugging Face server; `local` uses `HF_REALTIME_WS_URL`. Defaults to `deployed`. |
 | `HF_REALTIME_WS_URL` | Direct websocket endpoint for your own Hugging Face backend. Accepts either a base URL like `ws://127.0.0.1:8765/v1` or the full websocket URL `ws://127.0.0.1:8765/v1/realtime`. Used when `HF_REALTIME_CONNECTION_MODE=local`. |
@@ -248,7 +249,7 @@ Audio recording is disabled by default. When enabled, each conversation run crea
 
 Audio diarization is disabled by default and only runs when `--record-audio` is also enabled. It sends each saved user-input WAV to OpenAI's audio transcriptions endpoint using `DIARIZATION_MODEL_NAME` and writes a matching `*.diarization.json` file in the same recording folder. Assistant audio returned by the realtime model is not diarized.
 
-When speaker names are passed to `--diarize-audio`, they are sent to OpenAI as `known_speaker_names`. The app also looks in `speaker_references/` for matching reference recordings by file stem, such as `speaker_references/bob.wav` for `bob`, and sends any matches as `known_speaker_references`.
+When speaker names are passed to `--diarize-audio`, they are sent to OpenAI as `known_speaker_names`. The app also looks in `SPEAKER_REFERENCE_DIR` for matching reference recordings by file stem, such as `speaker_references/bob.wav` for `bob`, and sends any matches as `known_speaker_references`.
 
 Output audio normalization is disabled by default. When enabled, assistant audio snippets are peak-normalized with smoothing and a quiet-pause gate to reduce backend/voice volume differences without boosting silence.
 

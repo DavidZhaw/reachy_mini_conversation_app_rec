@@ -158,6 +158,8 @@ async def test_realtime_audio_diarization_runs_after_user_wav_is_saved(
     monkeypatch.setenv("AUDIO_RECORDINGS_DIR", str(tmp_path))
     monkeypatch.setattr("reachy_mini_conversation_app.config.config.OPENAI_API_KEY", "test-key")
     monkeypatch.setattr("reachy_mini_conversation_app.config.config.DIARIZATION_MODEL_NAME", "test-diarize-model")
+    speaker_reference_dir = tmp_path / "configured_speaker_references"
+    monkeypatch.setattr("reachy_mini_conversation_app.config.config.SPEAKER_REFERENCE_DIR", speaker_reference_dir)
 
     calls: list[tuple[Path, Path, str, str, list[str], Path | None]] = []
 
@@ -196,6 +198,5 @@ async def test_realtime_audio_diarization_runs_after_user_wav_is_saved(
     assert model_name == "test-diarize-model"
     assert api_key == "test-key"
     assert speaker_names == ["bob", "alice"]
-    assert speaker_references_dir is not None
-    assert speaker_references_dir.name == "speaker_references"
+    assert speaker_references_dir == speaker_reference_dir
     assert output_path.exists()

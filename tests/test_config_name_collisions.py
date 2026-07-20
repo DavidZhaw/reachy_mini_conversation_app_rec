@@ -104,6 +104,16 @@ def test_refresh_runtime_config_reloads_hf_runtime_fields(monkeypatch: pytest.Mo
     assert config_mod.config.LOCAL_VISION_MODEL == "test/local-vision-model"
 
 
+def test_refresh_runtime_config_reloads_speaker_reference_dir(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Instance-local .env reloads should update the diarization speaker reference directory."""
+    monkeypatch.setenv("SPEAKER_REFERENCE_DIR", "custom_speakers")
+    monkeypatch.setattr(config_mod.config, "SPEAKER_REFERENCE_DIR", Path("old"))
+
+    config_mod.refresh_runtime_config_from_env()
+
+    assert config_mod.config.SPEAKER_REFERENCE_DIR == config_mod.PROJECT_ROOT / "custom_speakers"
+
+
 @pytest.mark.parametrize(
     ("configured_mode", "session_url", "direct_ws_url", "expected_mode", "expected_has_target"),
     [

@@ -375,7 +375,7 @@ class BaseRealtimeHandler(ConversationHandler, ABC):
                 model_name=config.DIARIZATION_MODEL_NAME,
                 api_key=api_key,
                 known_speaker_names=self._diarize_audio_speaker_names,
-                speaker_references_dir=PROJECT_ROOT / "speaker_references",
+                speaker_references_dir=config.SPEAKER_REFERENCE_DIR,
             )
         except asyncio.CancelledError:
             raise
